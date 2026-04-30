@@ -9,33 +9,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      if (token) {
-        try {
-          // Remove any stray quotes from token
-          const cleanToken = token.replace(/^["']|["']$/g, '');
-          const decoded = jwtDecode(cleanToken);
-          // Check expiration
-          const isExpired = decoded.exp && decoded.exp * 1000 < Date.now();
-          if (isExpired) {
-            console.error("Token expired");
-            logout();
-          } else {
-            setUser({ 
-              email: decoded.sub, 
-              role: decoded.role || 'employee',
-              org_id: decoded.org_id || null 
-            });
-          }
-        } catch (error) {
-          console.error("Failed to parse token:", token, error);
-          logout();
-        }
-      }
-      setLoading(false);
+    const cleanupAuth = () => {
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
     };
 
-    initializeAuth();
+    if (token) {
+      try {
+        const cleanToken = token.replace(/^["']|["']$/g, '');
+        const decoded = jwtDecode(cleanToken);
+        const isExpired = decoded.exp && decoded.exp * 1000 < Date.now();
+        if (isExpired) {
+          cleanupAuth();
+        } else {
+          setUser({ 
+            email: decoded.sub, 
+            role: decoded.role || 'employee',
+            org_id: decoded.org_id || null 
+          });
+        }
+      } catch (error) {
+        console.error("Failed to parse token:", error);
+        cleanupAuth();
+      }
+    }
+    setLoading(false);
   }, [token]);
 
   const handleLogin = React.useCallback((newToken) => {

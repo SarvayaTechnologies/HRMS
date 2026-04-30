@@ -38,12 +38,17 @@ class Employee(Base):
 class Attendance(Base):
     __tablename__ = "attendance"
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey("employees.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
     check_in = Column(DateTime, default=datetime.utcnow)
     check_out = Column(DateTime, nullable=True)
-    latitude = Column(Float)
-    longitude = Column(Float)
-    status = Column(String)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    status = Column(String, default="pending")  # pending, approved, rejected
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    date = Column(Date, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
 
 class LeaveStatus(str, enum.Enum):
     PENDING = "pending"

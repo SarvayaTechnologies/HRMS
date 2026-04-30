@@ -196,41 +196,7 @@ async def onboard_employee(data: dict, db: Session = Depends(database.get_db)):
     db.commit()
     return {"message": "Employee onboarded successfully"}
 
-OFFICE_LAT = 17.3850  
-OFFICE_LON = 78.4867
-
-from sqlalchemy.exc import IntegrityError
-
-@app.post("/attendance/punch")
-async def punch_in_out(data: dict, db: Session = Depends(database.get_db)):
-    emp_id = data.get("employee_id")
-    user_lat = data.get("lat")
-    user_lon = data.get("lon")
-
-    dist_meters = geodesic((user_lat, user_lon), (OFFICE_LAT, OFFICE_LON)).meters
-    
-   
-    is_in_office = dist_meters < 200 
-    
-    new_log = models.Attendance(
-        employee_id=emp_id,
-        latitude=user_lat,
-        longitude=user_lon,
-        status="Present" if is_in_office else "Remote"
-    )
-    db.add(new_log)
-    
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=f"Employee ID {emp_id} does not exist in the database. Please onboard the employee first.")
-    
-    return {
-        "message": "Punch successful", 
-        "status": new_log.status,
-        "location_verified": is_in_office
-    }
+# Attendance logic moved to the end of the file for full approval system support.
 
 @app.post("/leave/request")
 async def apply_leave(data: dict, db: Session = Depends(database.get_db)):
@@ -575,3 +541,139 @@ async def list_org_employees(db: Session = Depends(database.get_db), current_use
     
     return [{"id": e.id, "email": e.email, "full_name": e.full_name, "has_password": e.hashed_password is not None} for e in employees]
 
+from pydantic import BaseModel
+
+class AttendancePunchBase(BaseModel):
+    lat: float = None
+    lon: float = None
+
+@app.post("/attendance/punch")
+async def punch_attendance(
+    data: AttendancePunchBase,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can punch attendance")
+        
+    from datetime import datetime, date
+    today = datetime.utcnow().date()
+    
+    # Check if already punched in today
+    existing = db.query(models.Attendance).filter(
+        models.Attendance.user_id == current_user.id,
+        models.Attendance.date == today
+    ).first()
+    
+    if existing:
+        if not existing.check_out:
+            existing.check_out = datetime.utcnow()
+            db.commit()
+            return {"status": "Checked Out", "record_id": existing.id}
+        else:
+            raise HTTPException(status_code=400, detail="Already completed attendance for today")
+            
+    # New punch in — auto-approved
+    new_att = models.Attendance(
+        user_id=current_user.id,
+        check_in=datetime.utcnow(),
+        latitude=data.lat,
+        longitude=data.lon,
+        status="approved",
+        date=today
+    )
+    db.add(new_att)
+    db.commit()
+    db.refresh(new_att)
+    return {"status": "Checked In", "record_id": new_att.id, "message": "Punch-in recorded successfully."}
+
+
+
+@app.get("/attendance/my-records")
+async def my_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    records = db.query(models.Attendance).filter(models.Attendance.user_id == current_user.id).order_by(models.Attendance.date.desc()).all()
+    return [{"id": r.id, "check_in": r.check_in, "check_out": r.check_out, "status": r.status, "date": r.date.isoformat() if r.date else None} for r in records]
+
+@app.get("/org/attendance/pending")
+async def pending_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view pending attendance")
+    
+    # Explicit onclause needed because Attendance has 2 FKs to users (user_id + approved_by)
+    records = db.query(models.Attendance).join(
+        models.User, models.Attendance.user_id == models.User.id
+    ).filter(
+        models.User.organization_id == current_user.organization_id,
+        models.Attendance.status == "pending"
+    ).all()
+    
+    # Fetch user info separately to avoid relationship issues
+    result = []
+    for r in records:
+        emp = db.query(models.User).filter(models.User.id == r.user_id).first()
+        result.append({
+            "id": r.id, 
+            "employee_name": emp.full_name if emp else "Unknown",
+            "employee_email": emp.email if emp else "",
+            "check_in": r.check_in.isoformat() if r.check_in else None,
+            "check_out": r.check_out.isoformat() if r.check_out else None,
+            "date": r.date.isoformat() if r.date else None
+        })
+    return result
+
+@app.get("/org/attendance/all")
+async def all_org_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view attendance records")
+
+    records = db.query(models.Attendance).join(
+        models.User, models.Attendance.user_id == models.User.id
+    ).filter(
+        models.User.organization_id == current_user.organization_id
+    ).order_by(models.Attendance.date.desc()).all()
+
+    result = []
+    for r in records:
+        emp = db.query(models.User).filter(models.User.id == r.user_id).first()
+        result.append({
+            "id": r.id,
+            "employee_name": emp.full_name if emp else "Unknown",
+            "employee_email": emp.email if emp else "",
+            "check_in": r.check_in.isoformat() if r.check_in else None,
+            "check_out": r.check_out.isoformat() if r.check_out else None,
+            "date": r.date.isoformat() if r.date else None,
+            "status": r.status
+        })
+    return result
+
+@app.post("/org/attendance/{record_id}/approve")
+async def approve_attendance(record_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can approve attendance")
+        
+    record = db.query(models.Attendance).filter(models.Attendance.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+        
+    from datetime import datetime
+    record.status = "approved"
+    record.approved_by = current_user.id
+    record.approved_at = datetime.utcnow()
+    db.commit()
+    return {"status": "success", "message": "Attendance approved"}
+
+@app.post("/org/attendance/{record_id}/reject")
+async def reject_attendance(record_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can reject attendance")
+        
+    record = db.query(models.Attendance).filter(models.Attendance.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+        
+    from datetime import datetime
+    record.status = "rejected"
+    record.approved_by = current_user.id
+    record.approved_at = datetime.utcnow()
+    db.commit()
+    return {"status": "success", "message": "Attendance rejected"}
