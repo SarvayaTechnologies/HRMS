@@ -10,6 +10,7 @@ from . import models, database ,auth
 from .ai_engine import analyze_resume_with_ai,get_ai_response
 from geopy.distance import geodesic
 from .payroll_logic import calculate_monthly_pay
+from .utils import log_action
 import uuid
 from sqlalchemy.orm import joinedload
 
@@ -68,7 +69,7 @@ async def signup(data: dict, db: Session = Depends(database.get_db)):
     db.commit()
     db.refresh(new_user)
     
-    access_token = auth.create_access_token(data={"sub": new_user.email})
+    access_token = auth.create_access_token(data={"sub": new_user.email, "role": new_user.role, "org_id": new_user.organization_id})
     return {"access_token": access_token, "token_type": "bearer", "user": {"email": new_user.email, "role": new_user.role}}
 
 @app.post("/auth/login")
@@ -80,7 +81,7 @@ async def login(data: dict, db: Session = Depends(database.get_db)):
     if not auth.verify_password(data['password'], user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    access_token = auth.create_access_token(data={"sub": user.email})
+    access_token = auth.create_access_token(data={"sub": user.email, "role": user.role, "org_id": user.organization_id})
     return {"access_token": access_token, "token_type": "bearer", "user": {"email": user.email, "role": user.role}}
 
 @app.get("/login/google")
@@ -138,7 +139,7 @@ async def auth_callback(code: str, db: Session = Depends(database.get_db)):
         db.commit()
         db.refresh(user)
 
-    token = auth.create_access_token(data={"sub": user.email})
+    token = auth.create_access_token(data={"sub": user.email, "role": user.role, "org_id": user.organization_id})
     
     return RedirectResponse(url=f"http://localhost:3000/login?token={token}")
 
@@ -475,4 +476,30 @@ async def get_all_employees(db: Session = Depends(database.get_db)):
     
     return db.query(models.Employee).options(joinedload(models.Employee.user)).all()
 
+@app.post("/auth/setup-org")
+async def setup_organization(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    # Check if org name is taken
+    existing_org = db.query(models.Organization).filter(models.Organization.name == data['org_name']).first()
+    if existing_org:
+        raise HTTPException(status_code=400, detail="Organization name already taken")
 
+    # Create new organization
+    new_org = models.Organization(name=data['org_name'], subscription_plan="free")
+    db.add(new_org)
+    db.commit()
+    db.refresh(new_org)
+
+    # Link the current user to this new organization and make them admin
+    current_user.organization_id = new_org.id
+    current_user.role = "admin"
+    db.commit()
+    db.refresh(current_user)
+
+    # Issue a new token with the updated org_id and role
+    access_token = auth.create_access_token(data={"sub": current_user.email, "role": current_user.role, "org_id": current_user.organization_id})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "org_id": new_org.id,
+        "user": {"email": current_user.email, "role": current_user.role}
+    }

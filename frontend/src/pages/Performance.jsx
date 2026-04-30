@@ -8,9 +8,13 @@ export default function Performance() {
 
   const runAIAnalysis = async () => {
     setLoading(true);
+    const token = localStorage.getItem("token");
     const res = await fetch("http://localhost:8001/performance/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
       body: JSON.stringify({ employee_id: 1, feedback: feedback }),
     });
     const result = await res.json();

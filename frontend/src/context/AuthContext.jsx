@@ -21,7 +21,11 @@ export const AuthProvider = ({ children }) => {
             console.error("Token expired");
             logout();
           } else {
-            setUser({ email: decoded.sub, role: decoded.role || 'employee' });
+            setUser({ 
+              email: decoded.sub, 
+              role: decoded.role || 'employee',
+              org_id: decoded.org_id || null 
+            });
           }
         } catch (error) {
           console.error("Failed to parse token:", token, error);

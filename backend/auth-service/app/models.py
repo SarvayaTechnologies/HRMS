@@ -65,11 +65,11 @@ class SalaryStructure(Base):
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, ForeignKey("employees.id"))
     base_salary = Column(Float)
-    bonus_pct = Column(Float, default=10.0)
-    stock_options = Column(Integer, default=0)
-    level = Column(String)
-    house_allowance = Column(Float) 
-    other_allowances = Column(Float)
+    # bonus_pct = Column(Float, default=10.0)
+    # stock_options = Column(Integer, default=0)
+    # level = Column(String)
+    # house_allowance = Column(Float) 
+    # other_allowances = Column(Float)
 
 class Payslip(Base):
     __tablename__ = "payslips"

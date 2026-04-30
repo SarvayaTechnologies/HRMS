@@ -14,10 +14,14 @@ export default function Attendance() {
 
     navigator.geolocation.getCurrentPosition(async (position) => {
       const { latitude, longitude } = position.coords;
+      const token = localStorage.getItem("token");
       
       const res = await fetch("http://localhost:8001/attendance/punch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           employee_id: 1, // Dynamically get from AuthContext later
           lat: latitude,

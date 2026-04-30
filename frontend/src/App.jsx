@@ -13,6 +13,7 @@ import EmployeeDirectory from './pages/EmployeeDirectory';
 import Attendance from './pages/Attendance';
 import LeaveManagement from './pages/LeaveManagement';
 import Performance from './pages/Performance'; 
+import OrgSignup from './pages/OrgSignup';
 
 const ExecutiveDashboard = lazy(() => import('./pages/ExecutiveDashboard'));
 const ResumeUpload = lazy(() => import('./pages/ResumeUpload'));
@@ -48,6 +49,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Auth />} />
+          <Route path="/register-org" element={<OrgSignup/>} />
 
           <Route path="/dashboard/*" element={
             <ProtectedRoute>

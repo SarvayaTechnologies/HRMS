@@ -14,8 +14,10 @@ export default function ResumeUpload() {
     formData.append("file", file);
 
     try {
+      const token = localStorage.getItem("token");
       const res = await fetch("http://localhost:8001/talent/parse-resume", {
         method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
         body: formData,
       });
       const result = await res.json();

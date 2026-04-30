@@ -6,7 +6,10 @@ export default function Payroll() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-     fetch("http://localhost:8001/payroll/generate/1")
+    const token = localStorage.getItem("token");
+    fetch("http://localhost:8001/payroll/generate/1", {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
       .then(res => res.json())
       .then(json => {
         setData(json);
