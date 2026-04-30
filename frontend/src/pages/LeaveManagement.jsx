@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, CheckCircle, XCircle } from 'lucide-react';
+import { Calendar, CheckCircle, XCircle, Inbox } from 'lucide-react';
 
 export default function LeaveManagement() {
   const [activeTab, setActiveTab] = useState('apply'); 
@@ -37,18 +37,12 @@ export default function LeaveManagement() {
             <button className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">Submit Request</button>
           </div>
         ) : (
-          <div className="space-y-4">
-        
-            <div className="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center border border-slate-100">
-              <div>
-                <p className="font-bold text-slate-800">Sarah Smith</p>
-                <p className="text-sm text-slate-500 italic">Sick Leave · 2 Days (April 25 - 26)</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200"><CheckCircle /></button>
-                <button className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"><XCircle /></button>
-              </div>
-            </div>
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+            <Inbox className="mx-auto text-slate-300 mb-4" size={48} />
+            <h3 className="font-bold text-slate-800 text-xl mb-2">No Pending Leave Requests</h3>
+            <p className="text-slate-500 text-sm max-w-md mx-auto">
+              Leave requests submitted by employees will appear here for approval. No requests have been submitted yet.
+            </p>
           </div>
         )}
       </div>

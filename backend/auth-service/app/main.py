@@ -503,3 +503,75 @@ async def setup_organization(data: dict, db: Session = Depends(database.get_db),
         "org_id": new_org.id,
         "user": {"email": current_user.email, "role": current_user.role}
     }
+
+@app.post("/org/add-employee")
+async def add_employee(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Org admin adds an employee by email. Creates a User with role='employee' and links to org."""
+    if current_user.role not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Only organization admins can add employees")
+    
+    if not current_user.organization_id:
+        raise HTTPException(status_code=400, detail="You must belong to an organization first")
+    
+    emp_email = data.get("email")
+    emp_name = data.get("full_name", emp_email.split("@")[0])
+    
+    # Check if user already exists
+    existing = db.query(models.User).filter(models.User.email == emp_email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="This email is already registered")
+    
+    # Create user with employee role, no password yet
+    new_user = models.User(
+        email=emp_email,
+        full_name=emp_name,
+        hashed_password=None,
+        role="employee",
+        organization_id=current_user.organization_id
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"message": f"Employee {emp_email} added successfully", "employee_id": new_user.id}
+
+@app.post("/auth/employee-setup")
+async def employee_setup_password(data: dict, db: Session = Depends(database.get_db)):
+    """Employee sets their password for first-time login. Only works if they were pre-added by org admin."""
+    email = data.get("email")
+    password = data.get("password")
+    
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    
+    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found. Your organization must add you first.")
+    
+    if user.role != "employee":
+        raise HTTPException(status_code=400, detail="This endpoint is for employees only")
+    
+    if user.hashed_password:
+        raise HTTPException(status_code=400, detail="Password already set. Please use the login form.")
+    
+    user.hashed_password = auth.get_password_hash(password)
+    db.commit()
+    db.refresh(user)
+    
+    access_token = auth.create_access_token(data={"sub": user.email, "role": user.role, "org_id": user.organization_id})
+    return {"access_token": access_token, "token_type": "bearer", "user": {"email": user.email, "role": user.role}}
+
+@app.get("/org/employees")
+async def list_org_employees(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """List all employees in the current user's organization."""
+    if not current_user.organization_id:
+        raise HTTPException(status_code=400, detail="You must belong to an organization")
+    
+    employees = db.query(models.User).filter(
+        models.User.organization_id == current_user.organization_id,
+        models.User.role == "employee"
+    ).all()
+    
+    return [{"id": e.id, "email": e.email, "full_name": e.full_name, "has_password": e.hashed_password is not None} for e in employees]
+

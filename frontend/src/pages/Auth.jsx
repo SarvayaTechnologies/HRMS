@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Auth() {
@@ -8,25 +8,28 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated, loading } = useAuth();
+  const { login, isAuthenticated, loading, user } = useAuth();
 
   useEffect(() => {
     if (!loading && isAuthenticated && !searchParams.get("token")) {
-      navigate("/dashboard", { replace: true });
+      // Route based on role
+      if (user?.role === "employee") {
+        navigate("/employee", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     }
-  }, [isAuthenticated, loading, navigate, searchParams]);
+  }, [isAuthenticated, loading, navigate, searchParams, user]);
 
   useEffect(() => {
     const token = searchParams.get("token");
     if (token) {
       login(token);
-      // Wait for AuthContext to process token before navigating
       setTimeout(() => navigate("/dashboard", { replace: true }), 100);
     }
   }, [searchParams, login, navigate]);
 
   const handleGoogleLogin = () => {
-    // Points to your FastAPI Google Auth endpoint
     window.location.href = "http://localhost:8001/login/google";
   };
 
@@ -58,13 +61,16 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Decorative Glows */}
       <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-indigo-600/20 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-emerald-500/10 blur-[120px] rounded-full"></div>
 
       <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl relative z-10">
         <div className="text-center mb-8 flex flex-col items-center">
           <img src="/logo.png" alt="HRValy" className="h-24 object-contain mb-4" />
+          <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-4 py-1.5 mb-4">
+            <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></div>
+            <span className="text-indigo-400 text-xs font-bold uppercase tracking-wider">Organization Portal</span>
+          </div>
           <h2 className="text-white text-xl font-semibold">
             {isLogin ? "Welcome back" : "Create your account"}
           </h2>
@@ -120,7 +126,7 @@ export default function Auth() {
           Continue with Google
         </button>
 
-        <p className="text-center text-slate-400 text-sm mt-8">
+        <p className="text-center text-slate-400 text-sm mt-6">
           {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
           <button 
             onClick={() => setIsLogin(!isLogin)}
@@ -128,6 +134,17 @@ export default function Auth() {
           >
             {isLogin ? "Sign up" : "Log in"}
           </button>
+        </p>
+
+        <div className="relative my-4 text-center">
+          <hr className="border-white/10" />
+        </div>
+
+        <p className="text-center text-slate-400 text-sm">
+          Are you an employee?{" "}
+          <Link to="/employee-login" className="text-emerald-400 font-bold hover:underline">
+            Login here
+          </Link>
         </p>
       </div>
     </div>

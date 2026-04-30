@@ -3,17 +3,19 @@ import React, { Suspense, lazy } from 'react';
 
 import Home from './pages/Home';
 import Sidebar from './components/Sidebar';
+import EmployeeSidebar from './components/EmployeeSidebar';
 import Auth from './pages/Auth';
+import EmployeeAuth from './pages/EmployeeAuth';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import RoleGate from './components/RoleGate';
-
 
 import EmployeeDirectory from './pages/EmployeeDirectory';
 import Attendance from './pages/Attendance';
 import LeaveManagement from './pages/LeaveManagement';
 import Performance from './pages/Performance'; 
 import OrgSignup from './pages/OrgSignup';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 
 const ExecutiveDashboard = lazy(() => import('./pages/ExecutiveDashboard'));
 const ResumeUpload = lazy(() => import('./pages/ResumeUpload'));
@@ -29,12 +31,25 @@ const GrievancePortal = lazy(() => import('./pages/GrievanceProtal'));
 const HotspotRadar = lazy(() => import('./pages/HotspotRader'));
 const AuditLogs = lazy(() => import('./pages/AuditLogs'));
 
-function DashboardLayout({ children }) {
+function OrgDashboardLayout({ children }) {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <Suspense fallback={<div className="p-10 text-slate-400 font-medium italic">Initializing AI Module...</div>}>
+          {children}
+        </Suspense>
+      </main>
+    </div>
+  );
+}
+
+function EmployeeDashboardLayout({ children }) {
+  return (
+    <div className="flex h-screen bg-[#050505] overflow-hidden">
+      <EmployeeSidebar />
+      <main className="flex-1 overflow-y-auto">
+        <Suspense fallback={<div className="p-10 text-slate-400 font-medium italic">Loading...</div>}>
           {children}
         </Suspense>
       </main>
@@ -49,50 +64,55 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Auth />} />
+          <Route path="/employee-login" element={<EmployeeAuth />} />
           <Route path="/register-org" element={<OrgSignup/>} />
 
+          {/* Organization Dashboard Routes */}
           <Route path="/dashboard/*" element={
-            <ProtectedRoute>
-              <DashboardLayout>
+            <ProtectedRoute requiredRole="org">
+              <OrgDashboardLayout>
                 <Routes>
-            
                   <Route index element={<ExecutiveDashboard />} />
-                  
-
                   <Route path="upload" element={<ResumeUpload />} />
                   <Route path="interview" element={<InterviewSession />} />
                   <Route path="directory" element={<EmployeeDirectory />} />
-
-           
                   <Route path="attendance" element={<Attendance />}/>
                   <Route path="leavemanagement" element={<LeaveManagement />}/>
                   <Route path="payroll" element={<Payroll />} />
-
-     
                   <Route path="performance" element={<Performance />} />
                   <Route path="rewards" element={<TotalRewards />} />
                   <Route path="succession" element={<Succession />} />
-
-             
                   <Route path="learning" element={<SkillGap />} />
                   <Route path="learning/path" element={<LearningPath />} />
                   <Route path="mobility" element={<InternalMobility />} />
-
                   <Route path="culture" element={<CultureIntelligence />} />
                   <Route path="report-issue" element={<GrievancePortal />} />
                   <Route path="radar" element={<HotspotRadar />} />
-
-     
                   <Route path="audit" element={
                     <RoleGate allowedRoles={['admin']}>
                       <AuditLogs />
                     </RoleGate>
                   } />
-                  
-                 
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
-              </DashboardLayout>
+              </OrgDashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Employee Dashboard Routes */}
+          <Route path="/employee/*" element={
+            <ProtectedRoute requiredRole="employee">
+              <EmployeeDashboardLayout>
+                <Routes>
+                  <Route index element={<EmployeeDashboard />} />
+                  <Route path="attendance" element={<Attendance />} />
+                  <Route path="leave" element={<LeaveManagement />} />
+                  <Route path="learning" element={<SkillGap />} />
+                  <Route path="careers" element={<InternalMobility />} />
+                  <Route path="report" element={<GrievancePortal />} />
+                  <Route path="*" element={<Navigate to="/employee" replace />} />
+                </Routes>
+              </EmployeeDashboardLayout>
             </ProtectedRoute>
           } />
         </Routes>
