@@ -592,7 +592,7 @@ async def punch_attendance(
 @app.get("/attendance/my-records")
 async def my_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     records = db.query(models.Attendance).filter(models.Attendance.user_id == current_user.id).order_by(models.Attendance.date.desc()).all()
-    return [{"id": r.id, "check_in": r.check_in, "check_out": r.check_out, "status": r.status, "date": r.date.isoformat() if r.date else None} for r in records]
+    return [{"id": r.id, "check_in": r.check_in, "check_out": r.check_out, "status": r.status, "date": r.date.strftime("%Y-%m-%d") if r.date else None} for r in records]
 
 @app.get("/org/attendance/pending")
 async def pending_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -635,15 +635,16 @@ async def all_org_attendance(db: Session = Depends(database.get_db), current_use
     result = []
     for r in records:
         emp = db.query(models.User).filter(models.User.id == r.user_id).first()
-        result.append({
+        res = {
             "id": r.id,
             "employee_name": emp.full_name if emp else "Unknown",
             "employee_email": emp.email if emp else "",
             "check_in": r.check_in.isoformat() if r.check_in else None,
             "check_out": r.check_out.isoformat() if r.check_out else None,
-            "date": r.date.isoformat() if r.date else None,
+            "date": r.date.strftime("%Y-%m-%d") if r.date else None,
             "status": r.status
-        })
+        }
+        result.append(res)
     return result
 
 @app.post("/org/attendance/{record_id}/approve")

@@ -64,6 +64,17 @@ function EmployeeAttendance() {
     </span>
   );
 
+  const formatDate = (date, checkIn) => {
+    if (date) return date;
+    if (!checkIn) return '-';
+    try {
+      const d = new Date(checkIn + (checkIn.endsWith('Z') ? '' : 'Z'));
+      return d.toLocaleDateString();
+    } catch (e) {
+      return checkIn.split('T')[0] || '-';
+    }
+  };
+
   return (
     <div className="p-10 max-w-5xl mx-auto space-y-10">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100 text-center mx-auto">
@@ -99,7 +110,7 @@ function EmployeeAttendance() {
           <tbody className="divide-y divide-slate-100">
             {records.map(r => (
               <tr key={r.id}>
-                <td className="p-4 font-medium">{r.date || (r.check_in ? new Date(r.check_in + 'Z').toLocaleDateString() : '-')}</td>
+                <td className="p-4 font-medium text-slate-700">{formatDate(r.date, r.check_in)}</td>
                 <td className="p-4 text-slate-500">{r.check_in ? new Date(r.check_in + 'Z').toLocaleTimeString() : '-'}</td>
                 <td className="p-4 text-slate-500">{r.check_out ? new Date(r.check_out + 'Z').toLocaleTimeString() : '-'}</td>
                 <td className="p-4">{statusBadge(r.status)}</td>
@@ -139,6 +150,17 @@ function OrgAttendance() {
       {s}
     </span>
   );
+
+  const formatDate = (date, checkIn) => {
+    if (date) return date;
+    if (!checkIn) return '-';
+    try {
+      const d = new Date(checkIn + (checkIn.endsWith('Z') ? '' : 'Z'));
+      return d.toLocaleDateString();
+    } catch (e) {
+      return checkIn.split('T')[0] || '-';
+    }
+  };
 
   return (
     <div className="p-10 min-h-screen bg-slate-50">
@@ -180,7 +202,7 @@ function OrgAttendance() {
                       <p className="font-bold text-slate-700">{r.employee_name}</p>
                       <p className="text-xs text-slate-400">{r.employee_email}</p>
                     </td>
-                    <td className="p-6 font-medium">{r.date || (r.check_in ? new Date(r.check_in + 'Z').toLocaleDateString() : '-')}</td>
+                    <td className="p-6 font-medium text-slate-700">{formatDate(r.date, r.check_in)}</td>
                     <td className="p-6 text-slate-500">{r.check_in ? new Date(r.check_in + 'Z').toLocaleTimeString() : '-'}</td>
                     <td className="p-6 text-slate-500">{r.check_out ? new Date(r.check_out + 'Z').toLocaleTimeString() : '-'}</td>
                     <td className="p-6">{statusBadge(r.status)}</td>
