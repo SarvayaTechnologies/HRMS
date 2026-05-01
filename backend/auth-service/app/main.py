@@ -13,6 +13,7 @@ from .payroll_logic import calculate_monthly_pay
 from .utils import log_action
 import uuid
 from sqlalchemy.orm import joinedload
+from datetime import datetime
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -199,22 +200,93 @@ async def onboard_employee(data: dict, db: Session = Depends(database.get_db)):
 # Attendance logic moved to the end of the file for full approval system support.
 
 @app.post("/leave/request")
-async def apply_leave(data: dict, db: Session = Depends(database.get_db)):
+async def apply_leave(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can apply for leave")
+    
+    employee = db.query(models.Employee).filter(models.Employee.user_id == current_user.id).first()
+    if not employee:
+        # Auto-create basic employee record if missing
+        employee = models.Employee(
+            user_id=current_user.id,
+            org_id=current_user.organization_id,
+            employee_id=f"EMP-{current_user.id}",
+            department="Default",
+            designation="Staff"
+        )
+        db.add(employee)
+        db.commit()
+        db.refresh(employee)
+        
+    from datetime import datetime
     new_leave = models.LeaveRequest(
-        employee_id=data['employee_id'],
+        employee_id=employee.id,
         leave_type=data['leave_type'],
-        start_date=data['start_date'],
-        end_date=data['end_date'],
-        reason=data['reason']
+        start_date=datetime.strptime(data['start_date'], "%Y-%m-%d").date(),
+        end_date=datetime.strptime(data['end_date'], "%Y-%m-%d").date(),
+        reason=data['reason'],
+        status="pending"
     )
     db.add(new_leave)
     db.commit()
-    return {"message": "Leave request submitted"}
+    return {"message": "Leave request submitted successfully"}
 
-@app.get("/leave/manager/pending")
-async def get_pending_leaves(db: Session = Depends(database.get_db)):
+@app.get("/leave/my-requests")
+async def my_leaves(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can view their leaves")
     
-    return db.query(models.LeaveRequest).filter(models.LeaveRequest.status == "pending").all()
+    employee = db.query(models.Employee).filter(models.Employee.user_id == current_user.id).first()
+    if not employee:
+        return []
+        
+    records = db.query(models.LeaveRequest).filter(models.LeaveRequest.employee_id == employee.id).order_by(models.LeaveRequest.id.desc()).all()
+    return [{"id": r.id, "leave_type": r.leave_type, "start_date": r.start_date.isoformat() if r.start_date else None, "end_date": r.end_date.isoformat() if r.end_date else None, "status": r.status} for r in records]
+
+@app.get("/org/leave/all")
+async def all_org_leaves(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view leave requests")
+    
+    # Get all employees in the org
+    employees = db.query(models.Employee).filter(models.Employee.org_id == current_user.organization_id).all()
+    emp_ids = [e.id for e in employees]
+    
+    if not emp_ids:
+        return []
+        
+    records = db.query(models.LeaveRequest).filter(models.LeaveRequest.employee_id.in_(emp_ids)).order_by(models.LeaveRequest.id.desc()).all()
+    
+    result = []
+    for r in records:
+        emp = db.query(models.Employee).filter(models.Employee.id == r.employee_id).first()
+        user = db.query(models.User).filter(models.User.id == emp.user_id).first() if emp else None
+        
+        result.append({
+            "id": r.id,
+            "employee_name": user.full_name if user else "Unknown",
+            "leave_type": r.leave_type,
+            "start_date": r.start_date.isoformat() if r.start_date else None,
+            "end_date": r.end_date.isoformat() if r.end_date else None,
+            "reason": r.reason,
+            "status": r.status
+        })
+    return result
+
+@app.post("/org/leave/{leave_id}/{action}")
+async def action_leave(leave_id: int, action: str, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can approve/reject leaves")
+    if action not in ["approve", "reject"]:
+        raise HTTPException(status_code=400, detail="Invalid action")
+        
+    record = db.query(models.LeaveRequest).filter(models.LeaveRequest.id == leave_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+        
+    record.status = action + "d" # approved or rejected
+    db.commit()
+    return {"status": "success", "message": f"Leave {record.status}"}
 
 @app.get("/payroll/generate/{employee_id}")
 async def generate_payroll(
@@ -498,6 +570,17 @@ async def add_employee(data: dict, db: Session = Depends(database.get_db), curre
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # Also create the Employee record
+    new_emp = models.Employee(
+        user_id=new_user.id,
+        org_id=current_user.organization_id,
+        employee_id=f"EMP-{new_user.id}",
+        department=data.get("department", "Default"),
+        designation=data.get("designation", "Staff")
+    )
+    db.add(new_emp)
+    db.commit()
     
     return {"message": f"Employee {emp_email} added successfully", "employee_id": new_user.id}
 
