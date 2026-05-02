@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Clock, Leaf, BookCheck, Briefcase, 
-  ShieldAlert, Settings, Menu, X, LogOut, Mic, Bell, Target, Award, HeartPulse, Shield
+  ShieldAlert, Settings, Menu, X, LogOut, Mic, Bell, Target, Award, HeartPulse, Shield, ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -41,6 +41,7 @@ export default function EmployeeSidebar() {
     { name: 'Learning & Development', icon: <BookCheck size={20}/>, path: '/employee/learning' },
     { name: 'AI Interview', icon: <Mic size={20}/>, path: '/employee/interview' },
     { name: 'Anonymous Portal', icon: <ShieldAlert size={20}/>, path: '/employee/report' },
+    { name: 'Security Log', icon: <ShieldCheck size={20}/>, path: '/employee/security-log' },
     { name: 'Settings', icon: <Settings size={20}/>, path: '/employee/settings' },
   ];
 

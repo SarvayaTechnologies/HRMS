@@ -37,6 +37,7 @@ const EmployeePerformance = lazy(() => import('./pages/EmployeePerformance'));
 const EmployeeSuccession = lazy(() => import('./pages/EmployeeSuccession'));
 const CulturePulseEmployee = lazy(() => import('./pages/CulturePulseEmployee'));
 const WellnessNavigator = lazy(() => import('./pages/WellnessNavigator'));
+const PersonalSecurityLog = lazy(() => import('./pages/PersonalSecurityLog'));
 
 function OrgDashboardLayout({ children }) {
   return (
@@ -122,6 +123,7 @@ function App() {
                   <Route path="succession" element={<EmployeeSuccession />} />
                   <Route path="pulse" element={<CulturePulseEmployee />} />
                   <Route path="wellness" element={<WellnessNavigator />} />
+                  <Route path="security-log" element={<PersonalSecurityLog />} />
                   <Route path="*" element={<Navigate to="/employee" replace />} />
                 </Routes>
               </EmployeeDashboardLayout>

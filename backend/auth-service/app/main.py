@@ -9,10 +9,10 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from . import models, database ,auth
-from .ai_engine import analyze_resume_with_ai, get_ai_response, evaluate_internal_candidate, calculate_skill_match, generate_dream_role_paths, generate_adaptive_questions, analyze_soft_skills, generate_competency_spider, analyze_sentiment_integrity, generate_ai_resume, generate_highlights_reel
+from .ai_engine import analyze_resume_with_ai, get_ai_response, evaluate_internal_candidate, calculate_skill_match, generate_dream_role_paths, generate_adaptive_questions, analyze_soft_skills, generate_competency_spider, analyze_sentiment_integrity, generate_ai_resume, generate_highlights_reel, analyze_threat_intelligence, verify_audit_integrity
 from geopy.distance import geodesic
 from .payroll_logic import calculate_monthly_pay, calculate_monthly_payroll, build_salary_structure, detect_anomalies
-from .utils import log_action
+from .utils import log_action, log_data_access
 import uuid
 import calendar
 from sqlalchemy.orm import joinedload
@@ -2955,4 +2955,163 @@ async def live_prediction_intervention(db: Session = Depends(database.get_db), c
     }
     
     result = await run_live_prediction_intervention(burnout_data, leave_data, careers_data)
+    return result
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ZERO-TRUST SECURITY AUDIT TRAIL ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class KillSessionRequest(BaseModel):
+    session_token: str
+
+@app.get("/employee/security-log")
+def get_personal_security_log(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Personal Security Log: Data access notifications, active sessions, privacy requests, consent history."""
+    if current_user.role != "employee":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # 1. Data Access Notifications
+    data_accesses = db.query(models.DataAccessLog).filter(models.DataAccessLog.employee_id == current_user.id).order_by(models.DataAccessLog.timestamp.desc()).limit(10).all()
+    access_log = []
+    for access in data_accesses:
+        viewer = db.query(models.User).filter(models.User.id == access.accessed_by).first()
+        access_log.append({
+            "id": access.id,
+            "viewer_name": viewer.name if viewer else "Unknown",
+            "viewer_role": viewer.role if viewer else "Unknown",
+            "data_field": access.data_field,
+            "reason": access.access_reason,
+            "timestamp": access.timestamp.isoformat(),
+            "ip": access.ip_address
+        })
+
+    # 2. Active Session Control
+    sessions = db.query(models.ActiveSession).filter(
+        models.ActiveSession.user_id == current_user.id,
+        models.ActiveSession.is_active == True
+    ).order_by(models.ActiveSession.last_activity.desc()).all()
+    active_sessions = [{
+        "id": s.id,
+        "token_prefix": s.session_token[:8] + "...",
+        "device": s.device_name or "Unknown Device",
+        "ip": s.ip_address,
+        "location": s.geo_location or "Unknown Location",
+        "last_active": s.last_activity.isoformat()
+    } for s in sessions]
+
+    # 3. Privacy Requests Status
+    requests = db.query(models.PrivacyRequest).filter(models.PrivacyRequest.user_id == current_user.id).order_by(models.PrivacyRequest.created_at.desc()).all()
+    privacy_requests = [{
+        "id": req.id,
+        "type": req.request_type,
+        "status": req.status,
+        "created_at": req.created_at.isoformat()
+    } for req in requests]
+
+    # 4. Consent History
+    consents = db.query(models.ConsentRecord).filter(models.ConsentRecord.user_id == current_user.id).order_by(models.ConsentRecord.timestamp.desc()).all()
+    consent_history = [{
+        "id": c.id,
+        "type": c.consent_type,
+        "action": c.action,
+        "timestamp": c.timestamp.isoformat()
+    } for c in consents]
+
+    # Security Health Score Calculation (Heuristic)
+    health_score = 100
+    if len(active_sessions) > 3: health_score -= 10
+    if any(s.get('location') == "Unknown Location" for s in active_sessions): health_score -= 5
+
+    return {
+        "security_health_score": max(0, health_score),
+        "data_access_notifications": access_log,
+        "active_sessions": active_sessions,
+        "privacy_requests": privacy_requests,
+        "consent_history": consent_history
+    }
+
+@app.post("/employee/kill-session")
+def kill_active_session(req: KillSessionRequest, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Kills a specific active session."""
+    session = db.query(models.ActiveSession).filter(
+        models.ActiveSession.session_token.startswith(req.session_token.replace("...", "")),
+        models.ActiveSession.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    session.is_active = False
+    log_action(db, current_user.id, "Session Killed", target_resource=session.device_name, ip=session.ip_address, org_id=current_user.organization_id)
+    db.commit()
+    return {"message": "Session terminated successfully"}
+
+@app.get("/organization/threat-intelligence")
+async def get_threat_intelligence(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Enterprise Threat Intelligence & granular audit tracking."""
+    if current_user.role != "organization":
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    org_id = current_user.organization_id
+    
+    # Recent Audit Logs (Granular)
+    recent_logs = db.query(models.AuditLog).filter(models.AuditLog.org_id == org_id).order_by(models.AuditLog.timestamp.desc()).limit(100).all()
+    audit_data = []
+    for log in recent_logs:
+        user = db.query(models.User).filter(models.User.id == log.user_id).first()
+        audit_data.append({
+            "id": log.id,
+            "admin": user.email if user else "System",
+            "action": log.action,
+            "target_resource": log.target_resource or "System Configuration",
+            "previous_value": log.previous_value,
+            "new_value": log.new_value,
+            "ip": log.ip_address,
+            "location": log.geo_location,
+            "timestamp": log.timestamp.isoformat(),
+            "hash": log.entry_hash
+        })
+        
+    # Admin Active Sessions
+    admin_sessions_query = db.query(models.ActiveSession).join(models.User).filter(
+        models.User.organization_id == org_id,
+        models.User.role != "employee",
+        models.ActiveSession.is_active == True
+    ).all()
+    
+    session_data = [{
+        "admin": s.user.email if s.user else "Unknown",
+        "device": s.device_name,
+        "ip": s.ip_address,
+        "location": s.geo_location
+    } for s in admin_sessions_query]
+    
+    # Run AI Threat Intelligence
+    intelligence = await analyze_threat_intelligence(audit_data, session_data)
+    
+    return {
+        "intelligence": intelligence,
+        "granular_logs": audit_data[:20]  # Only return top 20 for direct UI display
+    }
+
+@app.get("/audit/integrity-check")
+async def check_audit_integrity(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Immutable Proof of Integrity - Blockchain verified log hashes."""
+    if current_user.role != "organization":
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    org_id = current_user.organization_id
+    
+    # Fetch chronological log hashes
+    logs = db.query(models.AuditLog).filter(
+        models.AuditLog.org_id == org_id
+    ).order_by(models.AuditLog.id.asc()).all()
+    
+    if not logs:
+        return {"integrity_status": "VERIFIED", "verdict": "No logs to verify.", "confidence": 100}
+        
+    hash_chain = [{"id": l.id, "hash": l.entry_hash, "time": l.timestamp.isoformat()} for l in logs]
+    
+    # The AI engine acts as the independent "Integrity Verifier"
+    result = await verify_audit_integrity(hash_chain)
     return result

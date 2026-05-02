@@ -248,10 +248,72 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     action = Column(String, index=True) 
     target_id = Column(String, nullable=True) 
+    target_resource = Column(String, nullable=True)       # "Payroll Database", "AI Interview Models"
+    previous_value = Column(Text, nullable=True)          # JSON: old value before change
+    new_value = Column(Text, nullable=True)               # JSON: new value after change
+    ip_address = Column(String, nullable=True)
+    geo_location = Column(String, nullable=True)          # "Mumbai, IN" derived from IP
+    geo_flag = Column(Boolean, default=False)             # True if unusual location
+    severity = Column(String, default="info")             # info, warning, critical
+    entry_hash = Column(String, nullable=True, index=True) # SHA-256 hash for integrity
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
-    ip_address = Column(String)
+
+
+class DataAccessLog(Base):
+    """Tracks when admin/manager views employee sensitive data (PAN, Aadhaar, etc.)"""
+    __tablename__ = "data_access_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    accessed_by = Column(Integer, ForeignKey("users.id"), index=True)    # Who viewed
+    employee_id = Column(Integer, ForeignKey("users.id"), index=True)    # Whose data
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    data_field = Column(String)                  # "pan_number", "aadhaar_number", "performance_score"
+    access_reason = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ActiveSession(Base):
+    """Tracks all active login sessions for session control."""
+    __tablename__ = "active_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    session_token = Column(String, unique=True, index=True)
+    device_name = Column(String, nullable=True)       # "Chrome on Windows 11"
+    ip_address = Column(String, nullable=True)
+    geo_location = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_activity = Column(DateTime, default=datetime.utcnow)
+
+
+class PrivacyRequest(Base):
+    """GDPR / IT Act India privacy requests from employees."""
+    __tablename__ = "privacy_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    request_type = Column(String)                # "right_to_be_forgotten", "data_correction", "data_export"
+    description = Column(Text, nullable=True)
+    status = Column(String, default="pending")   # pending, in_review, completed, rejected
+    handler_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolution_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class ConsentRecord(Base):
+    """Timestamped consent grant/revoke history."""
+    __tablename__ = "consent_records"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    consent_type = Column(String)                # "data_processing", "ai_analysis", "marketing", "biometric"
+    action = Column(String)                      # "granted", "revoked"
+    version = Column(String, nullable=True)      # Policy version e.g. "v2.1"
+    ip_address = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
 
 
 class PreQualifiedPool(Base):
