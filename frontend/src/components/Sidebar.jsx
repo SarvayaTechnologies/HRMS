@@ -36,7 +36,7 @@ export default function Sidebar() {
   return (
     <div className={`flex flex-col h-screen bg-white border-r border-slate-200 transition-all duration-300 ${isOpen ? 'w-64' : 'w-20'}`}>
       <div className="p-6 flex items-center justify-between">
-        {isOpen && <img src="/logo.png" alt="HRValy" className="h-20 object-contain w-auto" />}
+        {isOpen && <img src="/logo.png" alt="HRValy" className="h-10 object-contain w-auto" />}
         <button onClick={() => setIsOpen(!isOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
           {isOpen ? <X size={20}/> : <Menu size={20}/>}
         </button>

@@ -6,7 +6,7 @@ export default function Navbar() {
     <nav className="flex items-center justify-between px-10 py-6 bg-transparent absolute top-0 w-full z-50">
       <div>
         <Link to="/">
-          <img src="/logo.png" alt="HRValy" className="h-24 md:h-36 object-contain w-auto" />
+          <img src="/logo.png" alt="HRValy" className="h-10 md:h-12 object-contain w-auto" />
         </Link>
       </div>
       <div className="flex gap-4">

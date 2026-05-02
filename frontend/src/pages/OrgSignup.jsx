@@ -60,7 +60,7 @@ export default function OrgSignup() {
 
       <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] shadow-2xl w-full max-w-md relative z-10">
         <div className="flex justify-center mb-6">
-          <img src="/logo.png" alt="HRValy" className="h-20 object-contain" />
+          <img src="/logo.png" alt="HRValy" className="h-10 object-contain" />
         </div>
         
         <h2 className="text-3xl font-black text-white mb-2 text-center">Setup Workspace</h2>
