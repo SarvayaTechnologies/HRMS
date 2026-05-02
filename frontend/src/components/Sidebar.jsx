@@ -19,8 +19,6 @@ export default function Sidebar() {
     { name: 'Leave Management', icon: <Leaf size={20}/>, path: '/dashboard/LeaveManagement', roles: ['employee', 'manager', 'admin'] },
     
     
-    { name: 'AI Resume Parser', icon: <Users size={20}/>, path: '/dashboard/upload', roles: ['manager', 'admin'] },
-    { name: 'AI Interview', icon: <Mic size={20}/>, path: '/dashboard/interview', roles: ['manager', 'admin'] },
     { name: 'Learning Path', icon: <BookCheck size={20}/>, path: '/dashboard/learning/path', roles: ['employee', 'manager', 'admin'] },
     { name: 'Internal Careers', icon: <Briefcase size={20}/>, path: '/dashboard/mobility', roles: ['employee', 'manager', 'admin'] },
 

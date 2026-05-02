@@ -26,6 +26,7 @@ const Succession = lazy(() => import('./pages/Succession'));
 const SkillGap = lazy(() => import('./pages/SkillGap'));
 const LearningPath = lazy(() => import('./pages/LearingPath'));
 const InternalMobility = lazy(() => import('./pages/InternalMobility'));
+const InterviewResults = lazy(() => import('./pages/InterviewResults'));
 const CultureIntelligence = lazy(() => import('./pages/CultureIntelligence'));
 const GrievancePortal = lazy(() => import('./pages/GrievanceProtal'));
 const HotspotRadar = lazy(() => import('./pages/HotspotRader'));
@@ -73,8 +74,6 @@ function App() {
               <OrgDashboardLayout>
                 <Routes>
                   <Route index element={<ExecutiveDashboard />} />
-                  <Route path="upload" element={<ResumeUpload />} />
-                  <Route path="interview" element={<InterviewSession />} />
                   <Route path="directory" element={<EmployeeDirectory />} />
                   <Route path="attendance" element={<Attendance />}/>
                   <Route path="leavemanagement" element={<LeaveManagement />}/>
@@ -85,6 +84,7 @@ function App() {
                   <Route path="learning" element={<SkillGap />} />
                   <Route path="learning/path" element={<LearningPath />} />
                   <Route path="mobility" element={<InternalMobility />} />
+                  <Route path="mobility/results/:jobId" element={<InterviewResults />} />
                   <Route path="culture" element={<CultureIntelligence />} />
                   <Route path="report-issue" element={<GrievancePortal />} />
                   <Route path="radar" element={<HotspotRadar />} />
@@ -109,6 +109,7 @@ function App() {
                   <Route path="leave" element={<LeaveManagement />} />
                   <Route path="learning" element={<SkillGap />} />
                   <Route path="careers" element={<InternalMobility />} />
+                  <Route path="interview" element={<InterviewSession />} />
                   <Route path="report" element={<GrievancePortal />} />
                   <Route path="*" element={<Navigate to="/employee" replace />} />
                 </Routes>

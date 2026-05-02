@@ -114,11 +114,29 @@ class RoleRequirement(Base):
 class InternalJob(Base):
     __tablename__ = "internal_jobs"
     id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"))
     title = Column(String) 
     department = Column(String)
-    salary_range = Column(String)
-    required_skills = Column(String) 
+    description = Column(String)
+    location = Column(String)
+    package = Column(String)
+    attachment_url = Column(String, nullable=True)
     posted_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="open")
+
+class InternalJobApplication(Base):
+    __tablename__ = "internal_job_applications"
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("internal_jobs.id"))
+    employee_id = Column(Integer, ForeignKey("users.id"))
+    resume_url = Column(String)
+    status = Column(String, default="Resume Parsing Completed")
+    match_score = Column(Float, nullable=True)
+    ai_reasoning = Column(String, nullable=True)
+    applied_at = Column(DateTime, default=datetime.utcnow)
+    interview_answers = Column(String, nullable=True)      # JSON string of [{question, answer}]
+    interview_evaluation = Column(String, nullable=True)   # JSON string of AI evaluation
+    interview_result = Column(String, nullable=True)        # "Recommended" / "Not Recommended"
 
 class PulseSurvey(Base):
     __tablename__ = "pulse_surveys"

@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from . import models, database ,auth
-from .ai_engine import analyze_resume_with_ai,get_ai_response
+from .ai_engine import analyze_resume_with_ai, get_ai_response, evaluate_internal_candidate
 from geopy.distance import geodesic
 from .payroll_logic import calculate_monthly_pay
 from .utils import log_action
@@ -16,6 +16,21 @@ from sqlalchemy.orm import joinedload
 from datetime import datetime
 
 models.Base.metadata.create_all(bind=database.engine)
+
+# Auto-migrate: add any missing columns (idempotent)
+from sqlalchemy import text as _text
+_migration_columns = [
+    ("internal_job_applications", "interview_answers", "TEXT"),
+    ("internal_job_applications", "interview_evaluation", "TEXT"),
+    ("internal_job_applications", "interview_result", "VARCHAR"),
+]
+with database.engine.connect() as _conn:
+    for _table, _col, _type in _migration_columns:
+        try:
+            _conn.execute(_text(f"ALTER TABLE {_table} ADD COLUMN {_col} {_type}"))
+            _conn.commit()
+        except Exception:
+            _conn.rollback()
 
 app = FastAPI(title="HRValy - Auth Service")
 
@@ -42,6 +57,32 @@ def read_root():
         "version": "1.0.0",
         "services": ["Auth", "User Management"]
     }
+
+@app.get("/dev/models")
+def list_gemini_models():
+    try:
+        from google import genai
+        import os
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        models = []
+        for m in client.models.list():
+            models.append(m.name)
+        return {"models": models}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/dev/repair")
+
+def repair_db(db: Session = Depends(database.get_db)):
+    from sqlalchemy import text
+    try:
+        db.execute(text("DROP TABLE IF EXISTS internal_job_applications CASCADE;"))
+        db.execute(text("DROP TABLE IF EXISTS internal_jobs CASCADE;"))
+        db.commit()
+        models.Base.metadata.create_all(bind=database.engine)
+        return {"status": "success. Tables recreated."}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/db-test")
 def test_db(db: Session =Depends(database.get_db)):
@@ -761,3 +802,321 @@ async def reject_attendance(record_id: int, db: Session = Depends(database.get_d
     record.approved_at = datetime.utcnow()
     db.commit()
     return {"status": "success", "message": "Attendance rejected"}
+
+
+# --- INTERNAL CAREERS ---
+
+@app.post("/org/jobs")
+async def create_internal_job(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can post internal jobs")
+    
+    new_job = models.InternalJob(
+        org_id=current_user.organization_id,
+        title=data.get("title", ""),
+        department=data.get("department", ""),
+        description=data.get("description", ""),
+        location=data.get("location", ""),
+        package=data.get("package", ""),
+        attachment_url=data.get("attachment_url", ""),
+        status="open"
+    )
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    return {"message": "Job posted successfully", "job_id": new_job.id}
+
+@app.get("/org/jobs")
+async def list_org_jobs(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view these jobs")
+    
+    jobs = db.query(models.InternalJob).filter(
+        models.InternalJob.org_id == current_user.organization_id
+    ).order_by(models.InternalJob.id.desc()).all()
+    
+    return [
+        {
+            "id": j.id,
+            "title": j.title,
+            "department": j.department,
+            "description": j.description,
+            "location": j.location,
+            "package": j.package,
+            "attachment_url": j.attachment_url,
+            "status": j.status,
+            "posted_at": j.posted_at.isoformat() if j.posted_at else None
+        } for j in jobs
+    ]
+
+@app.get("/employee/jobs")
+async def list_employee_jobs(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can view open roles")
+        
+    jobs = db.query(models.InternalJob).filter(
+        models.InternalJob.org_id == current_user.organization_id,
+        models.InternalJob.status == "open"
+    ).order_by(models.InternalJob.id.desc()).all()
+    
+    return [
+        {
+            "id": j.id,
+            "title": j.title,
+            "department": j.department,
+            "description": j.description,
+            "location": j.location,
+            "package": j.package,
+            "attachment_url": j.attachment_url,
+            "posted_at": j.posted_at.isoformat() if j.posted_at else None
+        } for j in jobs
+    ]
+
+@app.post("/employee/jobs/{job_id}/apply")
+async def apply_internal_job(
+    job_id: int, 
+    file: UploadFile = File(...), 
+    db: Session = Depends(database.get_db), 
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can apply")
+        
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    existing = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job.id,
+        models.InternalJobApplication.employee_id == current_user.id
+    ).first()
+    if existing:
+        if existing.status == "Error parsing resume":
+            db.delete(existing)
+            db.commit()
+        else:
+            raise HTTPException(status_code=400, detail="Already applied to this job")
+
+    from .parser import extract_text_from_file
+    content = await file.read()
+    print(f"DEBUG: Read file {file.filename}, length={len(content)}")
+    raw_text = extract_text_from_file(content, file.filename)
+    print(f"DEBUG: Extracted text length={len(raw_text)}")
+    
+    if not raw_text:
+        print("DEBUG: No text extracted from resume")
+        # Create a record anyway but with error
+        new_app = models.InternalJobApplication(
+            job_id=job_id,
+            employee_id=current_user.id,
+            resume_url=file.filename,
+            status="Error parsing resume",
+            match_score=0
+        )
+        db.add(new_app)
+        db.commit()
+        return {"status": "Error parsing resume"}
+
+    try:
+        print("DEBUG: Starting AI evaluation...")
+        from .ai_engine import evaluate_internal_candidate
+        evaluation = await evaluate_internal_candidate(raw_text, f"Title: {job.title}\nDesc: {job.description}\nPackage: {job.package}\nLocation: {job.location}")
+        print(f"DEBUG: AI Eval Result: {evaluation}")
+        new_app = models.InternalJobApplication(
+            job_id=job_id,
+            employee_id=current_user.id,
+            resume_url=file.filename,
+            status=evaluation.get("status", "Qualified"),
+            match_score=evaluation.get("score", 0),
+            ai_reasoning=evaluation.get("reasoning", "")
+        )
+        db.add(new_app)
+        db.commit()
+        return evaluation
+    except Exception as e:
+        print(f"DEBUG: AI Eval Endpoint Exception: {e}")
+        new_app = models.InternalJobApplication(
+            job_id=job_id,
+            employee_id=current_user.id,
+            resume_url=file.filename,
+            status="Error parsing resume",
+            match_score=0
+        )
+        db.add(new_app)
+        db.commit()
+        return {"error": str(e), "status": "Error parsing resume"}
+
+@app.get("/employee/jobs/{job_id}/application")
+async def get_my_application(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.employee_id == current_user.id
+    ).first()
+    
+    if not app_record:
+        return {"applied": False}
+    
+    return {
+        "applied": True,
+        "status": app_record.status,
+        "match_score": app_record.match_score,
+        "applied_at": app_record.applied_at.isoformat() if app_record.applied_at else None
+    }
+
+@app.get("/org/jobs/{job_id}/applications")
+async def get_job_applications(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view these")
+        
+    apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id
+    ).order_by(models.InternalJobApplication.id.desc()).all()
+    
+    results = []
+    for a in apps:
+        emp = db.query(models.User).filter(models.User.id == a.employee_id).first()
+        results.append({
+            "id": a.id,
+            "employee_id": a.employee_id,
+            "employee_name": emp.full_name if emp else "Unknown",
+            "resume_url": a.resume_url,
+            "status": a.status,
+            "match_score": a.match_score,
+            "applied_at": a.applied_at.isoformat() if a.applied_at else None
+        })
+    return results
+
+@app.post("/employee/jobs/{job_id}/start-interview")
+async def start_internal_interview(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.employee_id == current_user.id
+    ).first()
+    
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Application not found")
+        
+    app_record.status = "AI Interview In Progress"
+    db.commit()
+    return {"status": app_record.status}
+
+@app.get("/employee/pending-interviews")
+async def get_pending_interviews(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.employee_id == current_user.id,
+        models.InternalJobApplication.status.in_(["Qualified for AI Interview", "qualified_for_interview", "AI Interview In Progress"])
+    ).all()
+    
+    results = []
+    for a in apps:
+        job = db.query(models.InternalJob).filter(models.InternalJob.id == a.job_id).first()
+        if job:
+            results.append({
+                "application_id": a.id,
+                "job_id": job.id,
+                "job_title": job.title,
+                "job_description": job.description,
+                "status": a.status
+            })
+    return results
+
+@app.post("/employee/transcribe-audio")
+async def transcribe_audio_endpoint(file: UploadFile = File(...), current_user: models.User = Depends(auth.get_current_user)):
+    """Transcribe audio for browsers that don't support Web Speech API."""
+    audio_bytes = await file.read()
+    if len(audio_bytes) < 100:
+        return {"text": ""}
+    
+    # Determine mime type from the uploaded file
+    mime_type = file.content_type or "audio/webm"
+    
+    from .ai_engine import transcribe_audio
+    text = await transcribe_audio(audio_bytes, mime_type)
+    return {"text": text}
+
+@app.get("/employee/interview/{job_id}/generate-questions")
+async def get_interview_questions(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Mark interview as in progress
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.employee_id == current_user.id
+    ).first()
+    if app_record:
+        app_record.status = "AI Interview In Progress"
+        db.commit()
+        
+    from .ai_engine import generate_interview_questions
+    questions = await generate_interview_questions(job.title, job.description)
+    return {"questions": questions}
+
+@app.post("/employee/jobs/{job_id}/finish-interview")
+async def finish_internal_interview(job_id: int, request: Request, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.employee_id == current_user.id
+    ).first()
+    
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Application not found")
+    
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    
+    # Save the Q&A pairs
+    answers = payload.get("answers", []) if payload else []
+    app_record.interview_answers = json.dumps(answers)
+    app_record.status = "AI Interview Completed"
+    db.commit()
+    
+    # Run AI evaluation in background-ish manner
+    if answers and job:
+        try:
+            from .ai_engine import evaluate_interview_performance
+            evaluation = await evaluate_interview_performance(job.title, job.description, answers)
+            app_record.interview_evaluation = json.dumps(evaluation)
+            app_record.interview_result = evaluation.get("recommendation", "Pending Review")
+            db.commit()
+        except Exception as e:
+            print(f"[main] Interview evaluation failed: {e}")
+            app_record.interview_result = "Pending Review"
+            db.commit()
+    
+    return {"status": app_record.status, "result": app_record.interview_result}
+
+@app.get("/org/jobs/{job_id}/interview-results")
+async def get_interview_results(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view these")
+    
+    apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.status.in_(["AI Interview Completed", "AI Interview In Progress"])
+    ).order_by(models.InternalJobApplication.id.desc()).all()
+    
+    results = []
+    for a in apps:
+        emp = db.query(models.User).filter(models.User.id == a.employee_id).first()
+        evaluation = None
+        if a.interview_evaluation:
+            try:
+                evaluation = json.loads(a.interview_evaluation)
+            except:
+                evaluation = None
+        
+        results.append({
+            "id": a.id,
+            "employee_id": a.employee_id,
+            "employee_name": emp.full_name if emp else "Unknown",
+            "employee_email": emp.email if emp else "N/A",
+            "status": a.status,
+            "match_score": a.match_score,
+            "interview_result": a.interview_result,
+            "evaluation": evaluation,
+            "applied_at": a.applied_at.isoformat() if a.applied_at else None
+        })
+    return results

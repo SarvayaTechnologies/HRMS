@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Clock, Leaf, BookCheck, Briefcase, 
-  ShieldAlert, Settings, Menu, X, LogOut
+  ShieldAlert, Settings, Menu, X, LogOut, Mic
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,6 +17,7 @@ export default function EmployeeSidebar() {
     { name: 'Leave Management', icon: <Leaf size={20}/>, path: '/employee/leave' },
     { name: 'Learning Path', icon: <BookCheck size={20}/>, path: '/employee/learning' },
     { name: 'Internal Careers', icon: <Briefcase size={20}/>, path: '/employee/careers' },
+    { name: 'AI Interview', icon: <Mic size={20}/>, path: '/employee/interview' },
     { name: 'Anonymous Portal', icon: <ShieldAlert size={20}/>, path: '/employee/report' },
     { name: 'Settings', icon: <Settings size={20}/>, path: '/employee/settings' },
   ];

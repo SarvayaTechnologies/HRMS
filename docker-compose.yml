@@ -10,6 +10,8 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./backend/auth-service:/app
 
   frontend:
     build: ./frontend
