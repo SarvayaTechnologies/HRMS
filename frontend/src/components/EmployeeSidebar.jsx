@@ -29,46 +29,72 @@ export default function EmployeeSidebar() {
     return () => clearInterval(iv);
   }, []);
 
-  const menuItems = [
-    { name: 'Dashboard', icon: <LayoutDashboard size={20}/>, path: '/employee' },
-    { name: 'Attendance', icon: <Clock size={20}/>, path: '/employee/attendance' },
-    { name: 'Leave Management', icon: <Leaf size={20}/>, path: '/employee/leave' },
-    { name: 'Internal Careers', icon: <Briefcase size={20}/>, path: '/employee/careers' },
-    { name: 'Performance Intelligence', icon: <Target size={20}/>, path: '/employee/performance' },
-    { name: 'Succession Planning', icon: <Award size={20}/>, path: '/employee/succession' },
-    { name: 'Culture Pulse', icon: <HeartPulse size={20}/>, path: '/employee/pulse' },
-    { name: 'Wellness Navigator', icon: <Shield size={20}/>, path: '/employee/wellness' },
-    { name: 'Learning & Development', icon: <BookCheck size={20}/>, path: '/employee/learning' },
-    { name: 'AI Interview', icon: <Mic size={20}/>, path: '/employee/interview' },
-    { name: 'Anonymous Portal', icon: <ShieldAlert size={20}/>, path: '/employee/report' },
-    { name: 'Security Log', icon: <ShieldCheck size={20}/>, path: '/employee/security-log' },
-    { name: 'Settings', icon: <Settings size={20}/>, path: '/employee/settings' },
+  const menuGroups = [
+    {
+      title: "My Workspace",
+      items: [
+        { name: 'Dashboard', icon: <LayoutDashboard size={20}/>, path: '/employee' },
+        { name: 'Smart Attendance', icon: <Clock size={20}/>, path: '/employee/attendance' },
+        { name: 'Leave Management', icon: <Leaf size={20}/>, path: '/employee/leave' },
+      ]
+    },
+    {
+      title: "Career Acceleration",
+      items: [
+        { name: 'Internal Marketplace', icon: <Briefcase size={20}/>, path: '/employee/careers' },
+        { name: 'AI Interview Center', icon: <Mic size={20}/>, path: '/employee/interview' },
+        { name: 'Learning & Development', icon: <BookCheck size={20}/>, path: '/employee/learning' },
+        { name: 'Performance Tracking', icon: <Target size={20}/>, path: '/employee/performance' },
+        { name: 'Succession Planning', icon: <Award size={20}/>, path: '/employee/succession' },
+      ]
+    },
+    {
+      title: "Well-being & Feedback",
+      items: [
+        { name: 'Wellness Navigator', icon: <Shield size={20}/>, path: '/employee/wellness' },
+        { name: 'Culture Pulse', icon: <HeartPulse size={20}/>, path: '/employee/pulse' },
+        { name: 'Anonymous Reporting', icon: <ShieldAlert size={20}/>, path: '/employee/report' },
+      ]
+    },
+    {
+      title: "Security & Privacy",
+      items: [
+        { name: 'Security Log', icon: <ShieldCheck size={20}/>, path: '/employee/security-log' },
+        { name: 'Settings', icon: <Settings size={20}/>, path: '/employee/settings' },
+      ]
+    }
   ];
 
   return (
-    <div className={`flex flex-col h-screen bg-white border-r border-slate-200 transition-all duration-300 ${isOpen ? 'w-64' : 'w-20'}`}>
-      <div className="p-6 flex items-center justify-between relative">
-        {isOpen && <img src="/logo.png" alt="HRValy" className="h-10 object-contain w-auto" />}
-        <div className="flex gap-2">
-          <button onClick={() => setShowDropdown(!showDropdown)} className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-            <Bell size={20}/>
-            {notifications.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
-          </button>
-          <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-            {isOpen ? <X size={20}/> : <Menu size={20}/>}
+    <div className={`relative flex flex-col h-screen bg-[#050505] border-r border-white/5 transition-all duration-300 z-50 ${isOpen ? 'w-64' : 'w-20'}`}>
+      
+      {/* Toggle Button Moved Outside */}
+      <button 
+        onClick={() => setIsOpen(!isOpen)} 
+        className="absolute -right-4 top-8 bg-[#111] border border-white/10 text-slate-400 hover:text-emerald-400 p-1.5 rounded-full shadow-md transition-colors z-50 flex items-center justify-center"
+      >
+        {isOpen ? <X size={14}/> : <Menu size={14}/>}
+      </button>
+
+      <div className={`h-20 flex items-center relative ${isOpen ? 'px-6 justify-between' : 'px-0 justify-center'}`}>
+        {isOpen && <img src="/logo.png" alt="HRValy" className="h-8 object-contain w-auto" />}
+        <div className={`flex gap-2 ${isOpen ? '' : 'mx-auto'}`}>
+          <button onClick={() => setShowDropdown(!showDropdown)} className="relative p-2 text-slate-400 hover:bg-white/5 rounded-lg transition-colors">
+            <Bell size={18}/>
+            {notifications.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>}
           </button>
 
           {showDropdown && (
-            <div className="absolute top-16 left-6 bg-white border border-slate-200 shadow-xl rounded-xl w-64 max-h-80 overflow-y-auto z-50 p-2">
-               <div className="flex justify-between items-center p-2 border-b border-slate-100 mb-2">
-                 <h4 className="text-xs font-bold uppercase text-slate-500">Notifications</h4>
-                 <button onClick={() => setShowDropdown(false)} className="text-slate-400 hover:text-slate-700"><X size={14}/></button>
+            <div className={`absolute top-16 ${isOpen ? 'right-6 left-auto' : 'left-16'} bg-[#111] border border-white/10 shadow-xl rounded-xl w-64 max-h-80 overflow-y-auto z-50 p-2`}>
+               <div className="flex justify-between items-center p-2 border-b border-white/10 mb-2">
+                 <h4 className="text-xs font-bold uppercase text-slate-400">Notifications</h4>
+                 <button onClick={() => setShowDropdown(false)} className="text-slate-500 hover:text-slate-300"><X size={14}/></button>
                </div>
                {notifications.length === 0 ? (
-                 <p className="text-xs text-slate-400 p-2">No new notifications</p>
+                 <p className="text-xs text-slate-500 p-2">No new notifications</p>
                ) : notifications.map(n => (
-                 <div key={n.id} className="p-2 hover:bg-slate-50 rounded-lg cursor-pointer mb-1 border border-slate-100">
-                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                 <div key={n.id} className="p-2 hover:bg-white/5 rounded-lg cursor-pointer mb-1 border border-white/5">
+                    <p className="text-xs font-bold text-slate-200 flex items-center gap-1">
                       {n.type === 'success' && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block"></span>}
                       {n.type === 'info' && <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full inline-block"></span>}
                       {n.title}
@@ -83,40 +109,51 @@ export default function EmployeeSidebar() {
 
       {isOpen && (
         <div className="px-4 mb-4">
-          <div className="bg-emerald-50 rounded-xl px-3 py-2 flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-400 rounded-full"></div>
-            <span className="text-emerald-700 text-xs font-bold uppercase tracking-wider">Employee</span>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div>
+            <span className="text-emerald-400 text-[10px] font-bold uppercase tracking-wider">Employee</span>
           </div>
         </div>
       )}
 
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
-        {menuItems.map((item) => (
-          <Link
-            key={item.name}
-            to={item.path}
-            className={`flex items-center gap-4 p-3 rounded-xl transition-all group ${
-              location.pathname === item.path 
-              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' 
-              : 'text-slate-500 hover:bg-slate-50 hover:text-emerald-600'
-            }`}
-          >
-            <div className={location.pathname === item.path ? 'text-white' : 'text-slate-400 group-hover:text-emerald-600'}>
-              {item.icon}
+      <nav className="flex-1 px-3 py-2 space-y-6 overflow-y-auto custom-scrollbar pb-10">
+        {menuGroups.map((group, idx) => (
+          <div key={idx}>
+            {isOpen && (
+              <p className="px-3 mb-2 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                {group.title}
+              </p>
+            )}
+            <div className="space-y-1">
+              {group.items.map((item) => (
+                <Link
+                  key={item.name}
+                  to={item.path}
+                  className={`flex items-center ${isOpen ? 'justify-start gap-3 px-3' : 'justify-center'} py-2.5 rounded-lg transition-all group ${
+                    location.pathname === item.path 
+                    ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-md shadow-emerald-500/5' 
+                    : 'text-slate-400 hover:bg-white/5 hover:text-emerald-400'
+                  }`}
+                >
+                  <div className={location.pathname === item.path ? 'text-emerald-400' : 'text-slate-500 group-hover:text-emerald-400'}>
+                    {React.cloneElement(item.icon, { size: 18 })}
+                  </div>
+                  {isOpen && <span className="text-[13px] font-medium">{item.name}</span>}
+                </Link>
+              ))}
             </div>
-            {isOpen && <span className="text-sm font-semibold">{item.name}</span>}
-          </Link>
+          </div>
         ))}
       </nav>
 
       {/* Logout */}
-      <div className="p-4 border-t border-slate-200">
+      <div className="p-3 border-t border-white/5">
         <button 
           onClick={logout}
-          className="flex items-center gap-4 p-3 rounded-xl text-red-400 hover:bg-red-50 hover:text-red-600 transition-all w-full"
+          className={`flex items-center ${isOpen ? 'justify-start gap-3 px-3' : 'justify-center'} py-2.5 rounded-lg text-red-400/80 hover:bg-red-500/10 hover:text-red-400 transition-all w-full group`}
         >
-          <LogOut size={20}/>
-          {isOpen && <span className="text-sm font-semibold">Logout</span>}
+          <LogOut size={18} className="group-hover:scale-110 transition-transform"/>
+          {isOpen && <span className="text-[13px] font-medium">Logout</span>}
         </button>
       </div>
     </div>
