@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer,String,Boolean, ForeignKey,Date , DateTime, Float,Enum
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Date, DateTime, Float, Enum, Text
 import enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from  .database import Base
+from .database import Base
 
 class Organization(Base):
     __tablename__ ="organizations"
@@ -38,6 +38,11 @@ class User(Base):
     emergency_contact_name = Column(String, nullable=True)
     emergency_contact_phone = Column(String, nullable=True)
     personal_email = Column(String, nullable=True)
+    
+    # Skill-Gap Mobility fields
+    skills_profile = Column(Text, nullable=True)        # JSON: {"Python": 8, "React": 7, ...}
+    dream_roles = Column(Text, nullable=True)            # JSON: ["Lead Engineer", "CTO"]
+    career_aspiration_note = Column(Text, nullable=True)  # Free-text career goals
 
 class Employee(Base):
     __tablename__ ="employees"
@@ -162,6 +167,12 @@ class InternalJob(Base):
     attachment_url = Column(String, nullable=True)
     posted_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="open")
+    # Advanced Marketplace fields
+    required_skills = Column(Text, nullable=True)      # JSON: {"Python": 9, "React": 8}
+    experience_level = Column(String, nullable=True)    # Junior, Mid, Senior, Lead
+    job_type = Column(String, default="full_time")      # full_time, micro_gig, shadowing
+    gig_duration = Column(String, nullable=True)        # "1 week", "2 weeks" for micro-gigs
+    gig_department = Column(String, nullable=True)      # Host department for shadowing
 
 class InternalJobApplication(Base):
     __tablename__ = "internal_job_applications"
@@ -176,6 +187,16 @@ class InternalJobApplication(Base):
     interview_answers = Column(String, nullable=True)      # JSON string of [{question, answer}]
     interview_evaluation = Column(String, nullable=True)   # JSON string of AI evaluation
     interview_result = Column(String, nullable=True)        # "Recommended" / "Not Recommended"
+    # Advanced fields
+    skill_match_pct = Column(Float, nullable=True)          # Real-time skill match %
+    competency_scores = Column(Text, nullable=True)         # JSON spider chart data
+    sentiment_analysis = Column(Text, nullable=True)        # JSON sentiment/integrity flags
+    soft_skill_feedback = Column(Text, nullable=True)       # JSON communication clarity etc
+    interview_highlights = Column(Text, nullable=True)      # JSON key moments
+    interview_mode = Column(String, default="scored")       # "scored" or "practice"
+    is_prequalified = Column(Boolean, default=False)        # Pre-Qualified Talent Pool
+    prequalified_at = Column(DateTime, nullable=True)
+    ai_resume_data = Column(Text, nullable=True)            # JSON generated AI resume
 
 class PulseSurvey(Base):
     __tablename__ = "pulse_surveys"
@@ -221,3 +242,17 @@ class AuditLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     ip_address = Column(String)
 
+
+class PreQualifiedPool(Base):
+    __tablename__ = "prequalified_pool"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("users.id"), index=True)
+    original_job_id = Column(Integer, ForeignKey("internal_jobs.id"))
+    application_id = Column(Integer, ForeignKey("internal_job_applications.id"))
+    org_id = Column(Integer, ForeignKey("organizations.id"))
+    interview_score = Column(Float)
+    competency_scores = Column(Text, nullable=True)    # JSON
+    matched_skills = Column(Text, nullable=True)       # JSON
+    status = Column(String, default="available")        # available, hired, expired
+    added_at = Column(DateTime, default=datetime.utcnow)
+    notified_for_job_id = Column(Integer, nullable=True)  # If matched to a new role

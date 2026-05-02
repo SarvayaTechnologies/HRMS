@@ -32,6 +32,9 @@ const GrievancePortal = lazy(() => import('./pages/GrievanceProtal'));
 const HotspotRadar = lazy(() => import('./pages/HotspotRader'));
 const AuditLogs = lazy(() => import('./pages/AuditLogs'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
+const CourseCatalog = lazy(() => import('./pages/CourseCatalog'));
+const EmployeePerformance = lazy(() => import('./pages/EmployeePerformance'));
+const EmployeeSuccession = lazy(() => import('./pages/EmployeeSuccession'));
 
 function OrgDashboardLayout({ children }) {
   return (
@@ -109,10 +112,12 @@ function App() {
                   <Route path="onboarding" element={<Onboarding />} />
                   <Route path="attendance" element={<Attendance />} />
                   <Route path="leave" element={<LeaveManagement />} />
-                  <Route path="learning" element={<SkillGap />} />
                   <Route path="careers" element={<InternalMobility />} />
+                  <Route path="learning" element={<CourseCatalog />} />
                   <Route path="interview" element={<InterviewSession />} />
                   <Route path="report" element={<GrievancePortal />} />
+                  <Route path="performance" element={<EmployeePerformance />} />
+                  <Route path="succession" element={<EmployeeSuccession />} />
                   <Route path="*" element={<Navigate to="/employee" replace />} />
                 </Routes>
               </EmployeeDashboardLayout>

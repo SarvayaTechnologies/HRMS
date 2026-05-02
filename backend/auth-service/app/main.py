@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from . import models, database ,auth
-from .ai_engine import analyze_resume_with_ai, get_ai_response, evaluate_internal_candidate
+from .ai_engine import analyze_resume_with_ai, get_ai_response, evaluate_internal_candidate, calculate_skill_match, generate_dream_role_paths, generate_adaptive_questions, analyze_soft_skills, generate_competency_spider, analyze_sentiment_integrity, generate_ai_resume, generate_highlights_reel
 from geopy.distance import geodesic
 from .payroll_logic import calculate_monthly_pay, calculate_monthly_payroll, build_salary_structure, detect_anomalies
 from .utils import log_action
@@ -41,6 +41,26 @@ _migration_columns = [
     ("users", "emergency_contact_name", "VARCHAR"),
     ("users", "emergency_contact_phone", "VARCHAR"),
     ("users", "personal_email", "VARCHAR"),
+    # Skill-Gap Mobility fields
+    ("users", "skills_profile", "TEXT"),
+    ("users", "dream_roles", "TEXT"),
+    ("users", "career_aspiration_note", "TEXT"),
+    # Advanced Internal Job fields
+    ("internal_jobs", "required_skills", "TEXT"),
+    ("internal_jobs", "experience_level", "VARCHAR"),
+    ("internal_jobs", "job_type", "VARCHAR DEFAULT 'full_time'"),
+    ("internal_jobs", "gig_duration", "VARCHAR"),
+    ("internal_jobs", "gig_department", "VARCHAR"),
+    # Advanced Application fields
+    ("internal_job_applications", "skill_match_pct", "FLOAT"),
+    ("internal_job_applications", "competency_scores", "TEXT"),
+    ("internal_job_applications", "sentiment_analysis", "TEXT"),
+    ("internal_job_applications", "soft_skill_feedback", "TEXT"),
+    ("internal_job_applications", "interview_highlights", "TEXT"),
+    ("internal_job_applications", "interview_mode", "VARCHAR DEFAULT 'scored'"),
+    ("internal_job_applications", "is_prequalified", "BOOLEAN DEFAULT FALSE"),
+    ("internal_job_applications", "prequalified_at", "TIMESTAMP"),
+    ("internal_job_applications", "ai_resume_data", "TEXT"),
     # Grievance fields
     ("grievance_cases", "org_id", "INTEGER"),
     ("grievance_cases", "reporter_id", "INTEGER"),
@@ -1147,6 +1167,9 @@ async def create_internal_job(data: dict, db: Session = Depends(database.get_db)
         location=data.get("location", ""),
         package=data.get("package", ""),
         attachment_url=data.get("attachment_url", ""),
+        required_skills=json.dumps(data.get("required_skills", {})) if data.get("required_skills") else None,
+        experience_level=data.get("experience_level", ""),
+        job_type=data.get("job_type", "full_time"),
         status="open"
     )
     db.add(new_job)
@@ -1173,7 +1196,10 @@ async def list_org_jobs(db: Session = Depends(database.get_db), current_user: mo
             "package": j.package,
             "attachment_url": j.attachment_url,
             "status": j.status,
-            "posted_at": j.posted_at.isoformat() if j.posted_at else None
+            "posted_at": j.posted_at.isoformat() if j.posted_at else None,
+            "required_skills": json.loads(j.required_skills) if j.required_skills else {},
+            "experience_level": j.experience_level,
+            "job_type": j.job_type or "full_time"
         } for j in jobs
     ]
 
@@ -1196,6 +1222,9 @@ async def list_employee_jobs(db: Session = Depends(database.get_db), current_use
             "location": j.location,
             "package": j.package,
             "attachment_url": j.attachment_url,
+            "job_type": j.job_type or "full_time",
+            "required_skills": json.loads(j.required_skills) if j.required_skills else {},
+            "experience_level": j.experience_level,
             "posted_at": j.posted_at.isoformat() if j.posted_at else None
         } for j in jobs
     ]
@@ -1381,6 +1410,30 @@ async def get_interview_questions(job_id: int, db: Session = Depends(database.ge
     questions = await generate_interview_questions(job.title, job.description)
     return {"questions": questions}
 
+@app.post("/employee/jobs/{job_id}/adaptive-question")
+async def get_adaptive_question(job_id: int, request: Request, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    answers = payload.get("previous_answers", [])
+    
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    try:
+        from .ai_engine import generate_adaptive_questions
+        # determine difficulty based on how many questions asked so far
+        difficulty = "medium"
+        if len(answers) >= 2:
+            difficulty = "hard"
+        if len(answers) >= 4:
+            difficulty = "expert"
+            
+        next_q = await generate_adaptive_questions(job.title, job.description, answers, difficulty)
+        return next_q
+    except Exception as e:
+        print(f"[main] Adaptive question failed: {e}")
+        return {"question": "Could you provide more details about your experience in this area?", "difficulty": "medium"}
+
 @app.post("/employee/jobs/{job_id}/finish-interview")
 async def finish_internal_interview(job_id: int, request: Request, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
@@ -1409,12 +1462,556 @@ async def finish_internal_interview(job_id: int, request: Request, db: Session =
             app_record.interview_evaluation = json.dumps(evaluation)
             app_record.interview_result = evaluation.get("recommendation", "Pending Review")
             db.commit()
+            
+            # Run advanced AI analysis pipeline
+            try:
+                # 1. Competency Spider Chart
+                competency = await generate_competency_spider(job.title, job.description, answers)
+                app_record.competency_scores = json.dumps(competency)
+                
+                # 2. Soft-Skill Feedback
+                soft_skills = await analyze_soft_skills(answers)
+                app_record.soft_skill_feedback = json.dumps(soft_skills)
+                
+                # 3. Sentiment & Integrity Analysis
+                sentiment = await analyze_sentiment_integrity(answers)
+                app_record.sentiment_analysis = json.dumps(sentiment)
+                
+                db.commit()
+                
+                # 4. Auto-add to Pre-Qualified Talent Pool if recommended
+                if app_record.interview_result == "Recommended":
+                    existing_pool = db.query(models.PreQualifiedPool).filter(
+                        models.PreQualifiedPool.employee_id == current_user.id,
+                        models.PreQualifiedPool.original_job_id == job_id
+                    ).first()
+                    
+                    if not existing_pool:
+                        pool_entry = models.PreQualifiedPool(
+                            employee_id=current_user.id,
+                            original_job_id=job_id,
+                            application_id=app_record.id,
+                            org_id=current_user.organization_id,
+                            interview_score=evaluation.get("score", 0),
+                            competency_scores=app_record.competency_scores,
+                            matched_skills=current_user.skills_profile,
+                            status="available"
+                        )
+                        db.add(pool_entry)
+                        app_record.is_prequalified = True
+                        app_record.prequalified_at = datetime.utcnow()
+                        db.commit()
+                        print(f"[main] Employee {current_user.id} added to pre-qualified pool")
+                        
+            except Exception as adv_e:
+                print(f"[main] Advanced analysis partially failed: {adv_e}")
+                db.commit()
+                
         except Exception as e:
             print(f"[main] Interview evaluation failed: {e}")
             app_record.interview_result = "Pending Review"
             db.commit()
     
     return {"status": app_record.status, "result": app_record.interview_result}
+
+@app.get("/employee/dream-roles")
+async def get_dream_roles(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    try:
+        roles = json.loads(current_user.dream_roles) if current_user.dream_roles else []
+    except:
+        roles = []
+    
+    if not roles:
+        return {"paths": []}
+        
+    from .ai_engine import generate_dream_role_paths
+    paths = await generate_dream_role_paths(current_user.skills_profile, roles)
+    return paths
+
+@app.get("/org/prequalified-pool")
+async def get_prequalified_pool(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view this")
+        
+    pool = db.query(models.PreQualifiedPool).filter(
+        models.PreQualifiedPool.org_id == current_user.organization_id
+    ).all()
+    
+    results = []
+    for p in pool:
+        emp = db.query(models.User).filter(models.User.id == p.employee_id).first()
+        results.append({
+            "id": p.id,
+            "employee_id": p.employee_id,
+            "employee_name": emp.full_name if emp else "Unknown",
+            "current_role": emp.role,
+            "interview_score": p.interview_score,
+            "competency_scores": p.competency_scores,
+            "status": p.status,
+            "added_at": p.added_at.isoformat() if p.added_at else None
+        })
+    return results
+
+@app.get("/org/mobility-analytics")
+async def get_mobility_analytics(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can view this")
+    
+    # Very basic analytics mapping to return to the UI
+    # In a full system this would aggregate actual transfers
+    return {
+        "top_exporter": "Customer Support",
+        "top_importer": "Product Mgmt",
+        "flight_risk": "Engineering (Mid)",
+        "heatmap_data": [
+            {"source": "Engineering", "dest": "Product", "value": 12},
+            {"source": "Support", "dest": "Sales", "value": 24},
+            {"source": "Marketing", "dest": "Design", "value": 8}
+        ],
+        "cohort_analysis": [
+            {"period": "Q1", "turnover": 4.2, "internal_movement": 1.5},
+            {"period": "Q2", "turnover": 3.8, "internal_movement": 2.1},
+            {"period": "Q3", "turnover": 3.1, "internal_movement": 3.4},
+            {"period": "Q4", "turnover": 2.5, "internal_movement": 4.8}
+        ]
+    }
+
+
+# --- ADVANCED MARKETPLACE: Skill Profile & Dream Roles ---
+
+@app.get("/employee/skill-profile")
+async def get_skill_profile(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get employee's skill profile and dream roles."""
+    skills = {}
+    dream = []
+    try:
+        if current_user.skills_profile:
+            skills = json.loads(current_user.skills_profile)
+        if current_user.dream_roles:
+            dream = json.loads(current_user.dream_roles)
+    except:
+        pass
+    return {
+        "skills": skills,
+        "dream_roles": dream,
+        "career_note": current_user.career_aspiration_note or "",
+        "current_role": current_user.job_title or "",
+        "department": current_user.department or ""
+    }
+
+@app.post("/employee/skill-profile")
+async def update_skill_profile(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Update employee's skill profile."""
+    if "skills" in data:
+        current_user.skills_profile = json.dumps(data["skills"])
+    if "dream_roles" in data:
+        current_user.dream_roles = json.dumps(data["dream_roles"])
+    if "career_note" in data:
+        current_user.career_aspiration_note = data["career_note"]
+    db.commit()
+    return {"message": "Skill profile updated"}
+
+@app.get("/employee/dream-role-paths")
+async def get_dream_role_paths(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get AI-generated learning paths for dream roles."""
+    skills = {}
+    dream = []
+    try:
+        if current_user.skills_profile:
+            skills = json.loads(current_user.skills_profile)
+        if current_user.dream_roles:
+            dream = json.loads(current_user.dream_roles)
+    except:
+        pass
+    if not dream:
+        return {"paths": []}
+    
+    paths = await generate_dream_role_paths(skills, dream, current_user.job_title or "")
+    return paths
+
+@app.get("/employee/jobs-with-match")
+async def list_jobs_with_match(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """List all jobs with real-time skill match percentage for the employee."""
+    if current_user.role != "employee":
+        raise HTTPException(status_code=400, detail="Only employees can view this")
+    
+    jobs = db.query(models.InternalJob).filter(
+        models.InternalJob.org_id == current_user.organization_id,
+        models.InternalJob.status == "open"
+    ).order_by(models.InternalJob.id.desc()).all()
+    
+    employee_skills = {}
+    try:
+        if current_user.skills_profile:
+            employee_skills = json.loads(current_user.skills_profile)
+    except:
+        pass
+    
+    results = []
+    for j in jobs:
+        job_skills = {}
+        try:
+            if j.required_skills:
+                job_skills = json.loads(j.required_skills)
+        except:
+            pass
+        
+        # Calculate match
+        match_data = {"match_pct": 0, "gaps": [], "strengths": [], "learning_priority": []}
+        if employee_skills and job_skills:
+            match_data = await calculate_skill_match(employee_skills, job_skills)
+        
+        # Check if already applied
+        existing_app = db.query(models.InternalJobApplication).filter(
+            models.InternalJobApplication.job_id == j.id,
+            models.InternalJobApplication.employee_id == current_user.id
+        ).first()
+        
+        results.append({
+            "id": j.id,
+            "title": j.title,
+            "department": j.department,
+            "description": j.description,
+            "location": j.location,
+            "package": j.package,
+            "posted_at": j.posted_at.isoformat() if j.posted_at else None,
+            "required_skills": job_skills,
+            "experience_level": j.experience_level,
+            "job_type": j.job_type or "full_time",
+            "gig_duration": j.gig_duration,
+            "skill_match_pct": match_data.get("match_pct", 0),
+            "skill_gaps": match_data.get("gaps", []),
+            "skill_strengths": match_data.get("strengths", []),
+            "learning_priority": match_data.get("learning_priority", []),
+            "already_applied": existing_app is not None,
+            "application_status": existing_app.status if existing_app else None
+        })
+    
+    # Sort by match percentage descending
+    results.sort(key=lambda x: x["skill_match_pct"], reverse=True)
+    return results
+
+@app.post("/employee/generate-ai-resume/{job_id}")
+async def generate_ai_resume_endpoint(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Generate an AI-powered internal resume for a specific job."""
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    employee_data = {
+        "name": current_user.full_name,
+        "current_role": current_user.job_title or "Employee",
+        "department": current_user.department or "General",
+        "skills": json.loads(current_user.skills_profile) if current_user.skills_profile else {},
+        "tenure": str(current_user.date_of_joining) if current_user.date_of_joining else "N/A",
+        "email": current_user.email
+    }
+    
+    job_data = {
+        "title": job.title,
+        "department": job.department,
+        "description": job.description,
+        "required_skills": json.loads(job.required_skills) if job.required_skills else {},
+        "experience_level": job.experience_level or "Not specified"
+    }
+    
+    resume = await generate_ai_resume(employee_data, job_data)
+    return resume
+
+# --- ADVANCED MARKETPLACE: Micro-Gigs & Shadowing ---
+
+@app.post("/org/micro-gigs")
+async def create_micro_gig(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Create a micro-gig or shadowing opportunity."""
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=400, detail="Only org admins can create micro-gigs")
+    
+    new_gig = models.InternalJob(
+        org_id=current_user.organization_id,
+        title=data.get("title", ""),
+        department=data.get("department", ""),
+        description=data.get("description", ""),
+        location=data.get("location", ""),
+        package=data.get("package", ""),
+        job_type=data.get("job_type", "micro_gig"),
+        gig_duration=data.get("gig_duration", "1 week"),
+        gig_department=data.get("gig_department", ""),
+        required_skills=json.dumps(data.get("required_skills", {})) if data.get("required_skills") else None,
+        status="open"
+    )
+    db.add(new_gig)
+    db.commit()
+    return {"message": "Micro-gig created", "id": new_gig.id}
+
+@app.get("/employee/micro-gigs")
+async def list_micro_gigs(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """List all micro-gigs and shadowing opportunities."""
+    gigs = db.query(models.InternalJob).filter(
+        models.InternalJob.org_id == current_user.organization_id,
+        models.InternalJob.status == "open",
+        models.InternalJob.job_type.in_(["micro_gig", "shadowing"])
+    ).order_by(models.InternalJob.id.desc()).all()
+    
+    return [{
+        "id": g.id, "title": g.title, "department": g.department,
+        "description": g.description, "location": g.location,
+        "job_type": g.job_type, "gig_duration": g.gig_duration,
+        "gig_department": g.gig_department,
+        "posted_at": g.posted_at.isoformat() if g.posted_at else None
+    } for g in gigs]
+
+# --- ADVANCED INTERVIEW: Practice Mode ---
+
+@app.post("/employee/practice-interview/{job_id}")
+async def start_practice_interview(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Start a practice (sandbox) interview — not scored."""
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    from .ai_engine import generate_interview_questions
+    questions = await generate_interview_questions(job.title, job.description)
+    return {"questions": questions, "mode": "practice", "job_title": job.title}
+
+@app.post("/employee/practice-interview/{job_id}/evaluate")
+async def evaluate_practice_interview(job_id: int, request: Request, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Evaluate a practice interview and return soft-skill feedback (no record saved)."""
+    payload = await request.json()
+    answers = payload.get("answers", [])
+    
+    job = db.query(models.InternalJob).filter(models.InternalJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Run soft-skill analysis
+    soft_skills = await analyze_soft_skills(answers)
+    
+    # Run a lightweight evaluation
+    from .ai_engine import evaluate_interview_performance
+    evaluation = await evaluate_interview_performance(job.title, job.description, answers)
+    
+    return {
+        "mode": "practice",
+        "soft_skill_feedback": soft_skills,
+        "evaluation": evaluation,
+        "message": "This was a practice session. No record has been saved. Use these insights to improve!"
+    }
+
+# --- ADVANCED INTERVIEW: Soft-Skill Feedback ---
+
+@app.get("/employee/interview-feedback/{job_id}")
+async def get_interview_feedback(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get soft-skill feedback for a completed interview."""
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.job_id == job_id,
+        models.InternalJobApplication.employee_id == current_user.id,
+        models.InternalJobApplication.interview_mode == "scored"
+    ).first()
+    
+    if not app_record:
+        raise HTTPException(status_code=404, detail="No completed interview found")
+    
+    feedback = None
+    if app_record.soft_skill_feedback:
+        try:
+            feedback = json.loads(app_record.soft_skill_feedback)
+        except:
+            pass
+    
+    return {
+        "job_id": job_id,
+        "has_feedback": feedback is not None,
+        "soft_skill_feedback": feedback,
+        "interview_result": app_record.interview_result
+    }
+
+# --- ORG: Strategic Talent Analytics ---
+
+@app.get("/org/talent-analytics")
+async def get_talent_analytics(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get succession risk alerts, cost analysis, and diversity heatmap."""
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    org_id = current_user.organization_id
+    
+    # 1. Succession Risk Alerts: Find departments with critical skill gaps if key employees move
+    employees = db.query(models.User).filter(
+        models.User.organization_id == org_id,
+        models.User.role == "employee"
+    ).all()
+    
+    active_apps = db.query(models.InternalJobApplication).join(
+        models.InternalJob, models.InternalJobApplication.job_id == models.InternalJob.id
+    ).filter(models.InternalJob.org_id == org_id).all()
+    
+    # Build department headcount
+    dept_counts = {}
+    for emp in employees:
+        dept = emp.department or "General"
+        dept_counts[dept] = dept_counts.get(dept, 0) + 1
+    
+    # Find applicants from small teams
+    risk_alerts = []
+    for app in active_apps:
+        emp = db.query(models.User).filter(models.User.id == app.employee_id).first()
+        if emp:
+            dept = emp.department or "General"
+            count = dept_counts.get(dept, 1)
+            if count <= 3:
+                risk_alerts.append({
+                    "employee_name": emp.full_name,
+                    "department": dept,
+                    "team_size": count,
+                    "risk_level": "Critical" if count <= 2 else "High",
+                    "message": f"Moving {emp.full_name} from {dept} (team of {count}) could cause a critical skill gap"
+                })
+    
+    # 2. Internal vs External Cost Analysis
+    total_internal_hires = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.interview_result == "Recommended"
+    ).count()
+    
+    avg_external_cost = 15000  # Average recruitment cost
+    avg_internal_cost = 2000   # Minimal admin cost
+    savings_per_hire = avg_external_cost - avg_internal_cost
+    
+    cost_analysis = {
+        "internal_hires": total_internal_hires,
+        "avg_external_cost": avg_external_cost,
+        "avg_internal_cost": avg_internal_cost,
+        "total_savings": total_internal_hires * savings_per_hire,
+        "savings_per_hire": savings_per_hire,
+        "roi_percentage": round(((savings_per_hire / avg_external_cost) * 100), 1)
+    }
+    
+    # 3. Diversity & Mobility Heatmap
+    dept_mobility = {}
+    for app in active_apps:
+        emp = db.query(models.User).filter(models.User.id == app.employee_id).first()
+        if emp:
+            dept = emp.department or "General"
+            if dept not in dept_mobility:
+                dept_mobility[dept] = {"exports": 0, "headcount": dept_counts.get(dept, 0)}
+            dept_mobility[dept]["exports"] += 1
+    
+    mobility_heatmap = []
+    for dept, data in dept_mobility.items():
+        export_rate = round((data["exports"] / max(data["headcount"], 1)) * 100, 1)
+        mobility_heatmap.append({
+            "department": dept,
+            "headcount": data["headcount"],
+            "applicants_out": data["exports"],
+            "export_rate_pct": export_rate,
+            "status": "High Exporter" if export_rate > 30 else "Balanced" if export_rate > 10 else "Stalled"
+        })
+    
+    return {
+        "succession_risk_alerts": risk_alerts,
+        "cost_analysis": cost_analysis,
+        "mobility_heatmap": mobility_heatmap,
+        "total_employees": len(employees),
+        "total_active_applications": len(active_apps)
+    }
+
+# --- PRE-QUALIFIED TALENT POOL ---
+
+@app.get("/org/prequalified-pool")
+async def get_prequalified_pool(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get all pre-qualified candidates in the talent pool."""
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    pool = db.query(models.PreQualifiedPool).filter(
+        models.PreQualifiedPool.org_id == current_user.organization_id,
+        models.PreQualifiedPool.status == "available"
+    ).order_by(models.PreQualifiedPool.interview_score.desc()).all()
+    
+    results = []
+    for p in pool:
+        emp = db.query(models.User).filter(models.User.id == p.employee_id).first()
+        orig_job = db.query(models.InternalJob).filter(models.InternalJob.id == p.original_job_id).first()
+        competencies = None
+        try:
+            if p.competency_scores:
+                competencies = json.loads(p.competency_scores)
+        except:
+            pass
+        
+        results.append({
+            "pool_id": p.id,
+            "employee_id": p.employee_id,
+            "employee_name": emp.full_name if emp else "Unknown",
+            "employee_email": emp.email if emp else "",
+            "department": emp.department if emp else "",
+            "skills": json.loads(emp.skills_profile) if emp and emp.skills_profile else {},
+            "interview_score": p.interview_score,
+            "competency_scores": competencies,
+            "original_role": orig_job.title if orig_job else "Unknown",
+            "added_at": p.added_at.isoformat() if p.added_at else None,
+            "status": p.status
+        })
+    return {"pool": results, "total": len(results)}
+
+@app.post("/org/prequalified-pool/{pool_id}/hire/{job_id}")
+async def hire_from_pool(pool_id: int, job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Hire a pre-qualified candidate directly for a new role."""
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    pool_entry = db.query(models.PreQualifiedPool).filter(models.PreQualifiedPool.id == pool_id).first()
+    if not pool_entry:
+        raise HTTPException(status_code=404, detail="Pool entry not found")
+    
+    pool_entry.status = "hired"
+    pool_entry.notified_for_job_id = job_id
+    db.commit()
+    return {"message": "Candidate hired from pre-qualified pool", "employee_id": pool_entry.employee_id}
+
+# --- ORG: Highlights Reel ---
+
+@app.get("/org/jobs/{job_id}/highlights/{app_id}")
+async def get_interview_highlights(job_id: int, app_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get AI-generated highlights reel for a specific interview."""
+    if current_user.role not in ["org", "admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    app_record = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.id == app_id,
+        models.InternalJobApplication.job_id == job_id
+    ).first()
+    
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Application not found")
+    
+    # Return cached highlights if available
+    if app_record.interview_highlights:
+        try:
+            return json.loads(app_record.interview_highlights)
+        except:
+            pass
+    
+    # Generate highlights from answers
+    qa_pairs = []
+    evaluation = None
+    try:
+        if app_record.interview_answers:
+            qa_pairs = json.loads(app_record.interview_answers)
+        if app_record.interview_evaluation:
+            evaluation = json.loads(app_record.interview_evaluation)
+    except:
+        pass
+    
+    if not qa_pairs:
+        return {"highlights": [], "executive_summary": "No interview data available.", "hire_signal": "N/A"}
+    
+    highlights = await generate_highlights_reel(qa_pairs, evaluation)
+    
+    # Cache the result
+    app_record.interview_highlights = json.dumps(highlights)
+    db.commit()
+    
+    return highlights
 
 @app.get("/org/jobs/{job_id}/interview-results")
 async def get_interview_results(job_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -1644,3 +2241,503 @@ async def burnout_radar(db: Session = Depends(database.get_db), current_user: mo
     # Sort by highest risk
     results.sort(key=lambda x: x["risk_score"], reverse=True)
     return {"burnout_alerts": results[:10]}
+
+@app.get("/employee/notifications")
+async def get_employee_notifications(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """
+    Generate dynamic notifications based on pre-qualified pool, dream roles, and micro-gigs.
+    """
+    notifications = []
+    
+    # 1. Check pre-qualified pool entries
+    pool_entries = db.query(models.PreQualifiedPool).filter(
+        models.PreQualifiedPool.employee_id == current_user.id,
+        models.PreQualifiedPool.status == 'available'
+    ).all()
+    
+    for entry in pool_entries:
+        job = db.query(models.InternalJob).filter(models.InternalJob.id == entry.original_job_id).first()
+        notifications.append({
+            "id": f"prequal-{entry.id}",
+            "type": "success",
+            "title": "Pre-Qualified!",
+            "message": f"You are in the pre-qualified pool for {job.title if job else 'a role'}.",
+            "timestamp": entry.added_at.isoformat() if entry.added_at else datetime.utcnow().isoformat(),
+            "link": "/employee/careers"
+        })
+    
+    # 2. Check recommended applications
+    rec_apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.employee_id == current_user.id,
+        models.InternalJobApplication.interview_result == 'Recommended'
+    ).all()
+    for app_item in rec_apps:
+        job = db.query(models.InternalJob).filter(models.InternalJob.id == app_item.job_id).first()
+        notifications.append({
+            "id": f"rec-{app_item.id}",
+            "type": "success",
+            "title": "Recommended!",
+            "message": f"You were recommended for {job.title if job else 'an internal role'}.",
+            "timestamp": app_item.applied_at.isoformat() if app_item.applied_at else datetime.utcnow().isoformat(),
+            "link": "/employee/careers"
+        })
+        
+    # 3. Check for new Micro-Gigs that match skills
+    micro_gigs = db.query(models.InternalJob).filter(
+        models.InternalJob.job_type == 'micro_gig', 
+        models.InternalJob.status == 'open'
+    ).all()
+    if micro_gigs and current_user.skills_profile:
+        try:
+            emp_skills = set(json.loads(current_user.skills_profile).keys()) if '{' in (current_user.skills_profile or '') else set(json.loads(current_user.skills_profile or '[]'))
+        except Exception:
+            emp_skills = set()
+        for gig in micro_gigs:
+            try:
+                req_skills = set(json.loads(gig.required_skills).keys()) if gig.required_skills and '{' in gig.required_skills else set()
+            except Exception:
+                req_skills = set()
+            if req_skills and emp_skills:
+                match_pct = int((len(emp_skills.intersection(req_skills)) / len(req_skills)) * 100)
+                if match_pct >= 50:
+                    notifications.append({
+                        "id": f"gig-{gig.id}",
+                        "type": "info",
+                        "title": "New Micro-Gig Match",
+                        "message": f"Your skills are a {match_pct}% match for '{gig.title}'.",
+                        "timestamp": gig.posted_at.isoformat() if gig.posted_at else datetime.utcnow().isoformat(),
+                        "link": "/employee/careers"
+                    })
+                    
+    # Sort by timestamp descending
+    notifications.sort(key=lambda x: x["timestamp"], reverse=True)
+    return notifications
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PERFORMANCE INTELLIGENCE - EMPLOYEE SELF-GROWTH
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/performance/employee-growth")
+async def get_employee_growth(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """360-degree self-growth intelligence report for the logged-in employee."""
+    from .ai_engine import generate_employee_growth_report
+    
+    # Gather real data from the database
+    skills = json.loads(current_user.skills_profile) if current_user.skills_profile else {}
+    
+    # Attendance moods for mood-productivity correlation
+    recent_attendance = db.query(models.Attendance).filter(
+        models.Attendance.user_id == current_user.id
+    ).order_by(models.Attendance.date.desc()).limit(30).all()
+    moods = [a.mood for a in recent_attendance if a.mood]
+    
+    # Performance reviews for collaboration
+    reviews_given = db.query(models.PerformanceReview).filter(
+        models.PerformanceReview.reviewer_id == current_user.id
+    ).count() if hasattr(models.PerformanceReview, 'reviewer_id') else 0
+    
+    reviews_received = db.query(models.PerformanceReview).filter(
+        models.PerformanceReview.employee_id == current_user.id
+    ).all() if hasattr(models.PerformanceReview, 'employee_id') else []
+    
+    # Interview scores from internal applications
+    apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.employee_id == current_user.id
+    ).all()
+    interview_scores = []
+    for a in apps:
+        if a.competency_scores:
+            try:
+                interview_scores.append(json.loads(a.competency_scores))
+            except Exception:
+                pass
+    
+    # Pre-qualified pool entries (milestones/badges)
+    pool_entries = db.query(models.PreQualifiedPool).filter(
+        models.PreQualifiedPool.employee_id == current_user.id
+    ).all()
+    
+    # Succession data
+    succession = db.query(models.SuccessionData).filter(
+        models.SuccessionData.employee_id == current_user.id
+    ).first()
+    
+    employee_data = {
+        "name": current_user.full_name,
+        "current_role": current_user.job_title or "Employee",
+        "department": current_user.department or "General",
+        "skills": skills,
+        "moods": moods,
+        "reviews_given_count": reviews_given,
+        "reviews_received": [{"feedback": r.feedback_text, "rating": r.rating, "sentiment": r.sentiment_score} for r in reviews_received],
+        "interview_scores": interview_scores,
+        "pool_entries_count": len(pool_entries),
+        "performance_score": succession.performance_score if succession else None,
+        "potential_score": succession.potential_score if succession else None,
+        "dream_roles": json.loads(current_user.dream_roles) if current_user.dream_roles else [],
+    }
+    
+    report = await generate_employee_growth_report(employee_data)
+    return report
+
+
+@app.get("/performance/career-simulation")
+async def get_career_simulation(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Autonomous Career Simulation: What executive role in 24 months + $3k training plan."""
+    from .ai_engine import run_career_simulation
+    
+    skills = json.loads(current_user.skills_profile) if current_user.skills_profile else {}
+    
+    succession = db.query(models.SuccessionData).filter(
+        models.SuccessionData.employee_id == current_user.id
+    ).first()
+    
+    # Calculate tenure
+    tenure_months = 0
+    if current_user.date_of_joining:
+        from datetime import date
+        today = date.today()
+        tenure_months = (today.year - current_user.date_of_joining.year) * 12 + (today.month - current_user.date_of_joining.month)
+    
+    # Mood trend from attendance
+    recent_moods = db.query(models.Attendance.mood).filter(
+        models.Attendance.user_id == current_user.id,
+        models.Attendance.mood.isnot(None)
+    ).order_by(models.Attendance.date.desc()).limit(14).all()
+    mood_list = [m[0] for m in recent_moods if m[0]]
+    mood_trend = "Positive" if mood_list.count("Energized") + mood_list.count("Focused") > len(mood_list) / 2 else "Neutral"
+    
+    # Interview performance
+    apps = db.query(models.InternalJobApplication).filter(
+        models.InternalJobApplication.employee_id == current_user.id
+    ).all()
+    avg_score = 0
+    if apps:
+        scores = [a.match_score for a in apps if a.match_score]
+        avg_score = sum(scores) / len(scores) if scores else 0
+    
+    employee_data = {
+        "name": current_user.full_name,
+        "current_role": current_user.job_title or "Employee",
+        "department": current_user.department or "General",
+        "skills": skills,
+        "performance_score": succession.performance_score if succession else None,
+        "potential_score": succession.potential_score if succession else None,
+        "tenure_months": tenure_months,
+        "mood_trend": mood_trend,
+        "interview_scores": round(avg_score, 1),
+    }
+    
+    simulation = await run_career_simulation(employee_data)
+    return simulation
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PERFORMANCE INTELLIGENCE - ORG STRATEGIC VIEW
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/performance/nine-box")
+async def get_nine_box(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """9-Box Potential vs Performance matrix for all employees in the org."""
+    from .ai_engine import generate_nine_box
+    
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    # Get all succession data
+    succession_records = db.query(models.SuccessionData).all()
+    employees_data = []
+    for s in succession_records:
+        emp = db.query(models.Employee).filter(models.Employee.id == s.employee_id).first()
+        user = db.query(models.User).filter(models.User.id == emp.user_id).first() if emp else None
+        if user:
+            employees_data.append({
+                "employee_id": s.employee_id,
+                "name": user.full_name,
+                "role": user.job_title or emp.designation,
+                "department": user.department or emp.department,
+                "performance_score": s.performance_score,
+                "potential_score": s.potential_score,
+                "is_flight_risk": s.is_flight_risk,
+            })
+    
+    if not employees_data:
+        # Fallback: use all employees with reviews
+        users = db.query(models.User).filter(
+            models.User.organization_id == current_user.organization_id,
+            models.User.role == 'employee'
+        ).all()
+        for u in users:
+            reviews = db.query(models.PerformanceReview).filter(models.PerformanceReview.employee_id == u.id).all()
+            avg_rating = sum(r.rating for r in reviews) / len(reviews) if reviews else 5
+            avg_sentiment = sum(r.sentiment_score for r in reviews if r.sentiment_score) / max(len([r for r in reviews if r.sentiment_score]), 1)
+            employees_data.append({
+                "employee_id": u.id,
+                "name": u.full_name,
+                "role": u.job_title or "Employee",
+                "department": u.department or "General",
+                "performance_score": avg_rating * 2,
+                "potential_score": avg_sentiment * 10 if avg_sentiment else 5.0,
+                "is_flight_risk": False,
+            })
+    
+    result = await generate_nine_box(employees_data)
+    return result
+
+
+@app.get("/performance/sentiment-trend")
+async def get_sentiment_trend(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Gemini-powered sentiment trend analysis of peer feedback over time."""
+    from .ai_engine import analyze_sentiment_trend
+    
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    reviews = db.query(models.PerformanceReview).order_by(models.PerformanceReview.id.desc()).limit(50).all()
+    feedbacks = [{
+        "employee_id": r.employee_id,
+        "feedback": r.feedback_text,
+        "rating": r.rating,
+        "sentiment_score": r.sentiment_score,
+    } for r in reviews]
+    
+    result = await analyze_sentiment_trend(feedbacks)
+    return result
+
+
+@app.get("/performance/promotion-readiness")
+async def get_promotion_readiness(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Check which employees meet 100% criteria for Internal Careers roles."""
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    open_jobs = db.query(models.InternalJob).filter(
+        models.InternalJob.status == 'open',
+        models.InternalJob.org_id == current_user.organization_id
+    ).all()
+    
+    alerts = []
+    users = db.query(models.User).filter(
+        models.User.organization_id == current_user.organization_id,
+        models.User.role == 'employee',
+        models.User.skills_profile.isnot(None)
+    ).all()
+    
+    for user in users:
+        try:
+            emp_skills = json.loads(user.skills_profile)
+        except Exception:
+            continue
+        for job in open_jobs:
+            if not job.required_skills:
+                continue
+            try:
+                req_skills = json.loads(job.required_skills)
+            except Exception:
+                continue
+            total_req = sum(req_skills.values()) if isinstance(req_skills, dict) else 0
+            total_met = 0
+            if isinstance(req_skills, dict) and isinstance(emp_skills, dict):
+                for skill, level in req_skills.items():
+                    total_met += min(emp_skills.get(skill, 0), level)
+            match_pct = round((total_met / total_req) * 100) if total_req > 0 else 0
+            if match_pct >= 90:
+                alerts.append({
+                    "employee_id": user.id,
+                    "employee_name": user.full_name,
+                    "role": user.job_title,
+                    "target_job": job.title,
+                    "target_department": job.department,
+                    "match_pct": match_pct,
+                    "flag": "PROMOTION READY" if match_pct >= 95 else "NEAR READY",
+                })
+    
+    alerts.sort(key=lambda x: x["match_pct"], reverse=True)
+    return {"alerts": alerts, "total": len(alerts)}
+
+
+@app.get("/performance/disengagement-risk")
+async def get_disengagement_risk(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Predictive disengagement/burnout risk scores for org employees."""
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    users = db.query(models.User).filter(
+        models.User.organization_id == current_user.organization_id,
+        models.User.role == 'employee'
+    ).all()
+    
+    risks = []
+    for user in users:
+        risk_score = 0
+        factors = []
+        
+        # Factor 1: Negative mood streaks
+        recent_moods = db.query(models.Attendance.mood).filter(
+            models.Attendance.user_id == user.id,
+            models.Attendance.mood.isnot(None)
+        ).order_by(models.Attendance.date.desc()).limit(14).all()
+        mood_list = [m[0] for m in recent_moods if m[0]]
+        neg_moods = [m for m in mood_list if m in ["Stressed", "Exhausted", "Anxious", "Burned Out"]]
+        if len(neg_moods) > len(mood_list) * 0.4 and mood_list:
+            risk_score += 35
+            factors.append(f"{len(neg_moods)}/{len(mood_list)} negative mood check-ins")
+        
+        # Factor 2: Overtime flags
+        overtime_count = db.query(models.Attendance).filter(
+            models.Attendance.user_id == user.id,
+            models.Attendance.overtime_flag == True
+        ).count()
+        if overtime_count > 5:
+            risk_score += 25
+            factors.append(f"{overtime_count} overtime days detected")
+        
+        # Factor 3: Low performance sentiment
+        reviews = db.query(models.PerformanceReview).filter(
+            models.PerformanceReview.employee_id == user.id
+        ).all()
+        if reviews:
+            avg_sent = sum(r.sentiment_score for r in reviews if r.sentiment_score) / max(len([r for r in reviews if r.sentiment_score]), 1)
+            if avg_sent < 0.4:
+                risk_score += 20
+                factors.append(f"Low feedback sentiment ({avg_sent:.0%})")
+        
+        # Factor 4: Flight risk from succession data
+        succession = db.query(models.SuccessionData).filter(
+            models.SuccessionData.employee_id == user.id,
+            models.SuccessionData.is_flight_risk == True
+        ).first()
+        if succession:
+            risk_score += 20
+            factors.append("Flagged as flight risk in succession plan")
+        
+        if risk_score > 20:
+            risks.append({
+                "employee_id": user.id,
+                "employee_name": user.full_name,
+                "role": user.job_title or "Employee",
+                "department": user.department or "General",
+                "risk_score": min(risk_score, 100),
+                "risk_level": "Critical" if risk_score >= 70 else "High" if risk_score >= 50 else "Moderate",
+                "factors": factors,
+            })
+    
+    risks.sort(key=lambda x: x["risk_score"], reverse=True)
+    return {"risks": risks[:15], "total_at_risk": len(risks)}
+
+
+@app.get("/performance/org-career-simulation/{employee_id}")
+async def get_org_career_simulation(employee_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Org-level career simulation for a specific employee (admin only)."""
+    from .ai_engine import run_career_simulation
+    
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    user = db.query(models.User).filter(models.User.id == employee_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    skills = json.loads(user.skills_profile) if user.skills_profile else {}
+    succession = db.query(models.SuccessionData).filter(models.SuccessionData.employee_id == employee_id).first()
+    
+    tenure_months = 0
+    if user.date_of_joining:
+        from datetime import date
+        today = date.today()
+        tenure_months = (today.year - user.date_of_joining.year) * 12 + (today.month - user.date_of_joining.month)
+    
+    employee_data = {
+        "name": user.full_name,
+        "current_role": user.job_title or "Employee",
+        "department": user.department or "General",
+        "skills": skills,
+        "performance_score": succession.performance_score if succession else None,
+        "potential_score": succession.potential_score if succession else None,
+        "tenure_months": tenure_months,
+        "mood_trend": "Neutral",
+        "interview_scores": 0,
+    }
+    
+    simulation = await run_career_simulation(employee_data)
+    return simulation
+
+
+@app.get("/succession/org-pipeline")
+async def get_org_succession_pipeline(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from .ai_engine import analyze_succession_pipeline
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    # Gather organization data for AI analysis
+    users = db.query(models.User).filter(
+        models.User.organization_id == current_user.organization_id,
+        models.User.role == 'employee'
+    ).all()
+    
+    succession_data = db.query(models.SuccessionData).filter(
+        models.SuccessionData.employee_id.in_([u.id for u in users])
+    ).all()
+    
+    org_data = {
+        "total_employees": len(users),
+        "departments": list(set(u.department for u in users if u.department)),
+        "succession_mappings": [
+            {
+                "employee_id": s.employee_id,
+                "readiness": s.readiness_status,
+                "potential": s.potential_score,
+                "performance": s.performance_score,
+                "flight_risk": s.is_flight_risk
+            } for s in succession_data
+        ]
+    }
+    
+    result = await analyze_succession_pipeline(org_data)
+    return result
+
+
+@app.get("/succession/employee-profile")
+async def get_employee_succession_profile(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from .ai_engine import analyze_employee_succession_profile
+    if current_user.role != 'employee':
+        raise HTTPException(status_code=403, detail="Employee access only")
+    
+    # Ideally, employee's "Goal Role" is stored in their profile or derived from internal careers
+    goal_role = "Senior Engineer" # Default placeholder for now, would be dynamically fetched
+    goal_role_reqs = {"title": goal_role, "skills": {"Python": 8, "Leadership": 6, "Architecture": 7}}
+    
+    employee_data = {
+        "name": current_user.full_name,
+        "skills": json.loads(current_user.skills_profile) if current_user.skills_profile else {},
+        "department": current_user.department,
+        "job_title": current_user.job_title
+    }
+    
+    result = await analyze_employee_succession_profile(employee_data, goal_role_reqs)
+    return result
+
+
+class TriggerShadowRequest(BaseModel):
+    employee_id: int
+    target_role: str
+
+@app.post("/succession/trigger-shadow")
+async def trigger_shadow_pipeline(request: TriggerShadowRequest, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from .ai_engine import run_shadow_pipeline_simulation
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    user = db.query(models.User).filter(models.User.id == request.employee_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Employee not found")
+        
+    employee_data = {
+        "name": user.full_name,
+        "skills": json.loads(user.skills_profile) if user.skills_profile else {},
+        "performance_history": "Consistently high ratings"
+    }
+    
+    result = await run_shadow_pipeline_simulation(employee_data, request.target_role)
+    return result

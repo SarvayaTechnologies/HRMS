@@ -282,6 +282,390 @@ async def evaluate_interview_performance(job_title, job_desc, qa_pairs):
             "question_scores": []
         }
 
+async def calculate_skill_match(employee_skills: dict, job_required_skills: dict):
+    """Calculate real-time skill match percentage between employee and role requirements."""
+    if not employee_skills or not job_required_skills:
+        return {"match_pct": 0, "gaps": [], "strengths": []}
+    
+    prompt = f"""
+    You are an expert HR skill-matching AI. Compare these two skill profiles and calculate a match percentage.
+    
+    Employee Skills (skill: proficiency 1-10):
+    {json.dumps(employee_skills)}
+    
+    Role Required Skills (skill: required level 1-10):
+    {json.dumps(job_required_skills)}
+    
+    Return ONLY a valid JSON object with:
+    1. "match_pct": percentage match (0-100)
+    2. "gaps": list of objects with "skill", "current", "required", "gap" for skills where employee is below requirement
+    3. "strengths": list of objects with "skill", "level" for skills where employee meets or exceeds requirement
+    4. "learning_priority": list of top 3 skills to focus on, ordered by impact
+    
+    Return ONLY the JSON object.
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse skill match JSON")
+    except Exception as e:
+        print(f"[ai_engine] calculate_skill_match failed: {e}")
+        # Fallback: simple calculation
+        total = 0
+        matched = 0
+        gaps = []
+        strengths = []
+        for skill, required in job_required_skills.items():
+            total += required
+            current = employee_skills.get(skill, 0)
+            matched += min(current, required)
+            if current < required:
+                gaps.append({"skill": skill, "current": current, "required": required, "gap": required - current})
+            else:
+                strengths.append({"skill": skill, "level": current})
+        pct = round((matched / total) * 100) if total > 0 else 0
+        return {"match_pct": pct, "gaps": gaps, "strengths": strengths, "learning_priority": [g["skill"] for g in sorted(gaps, key=lambda x: x["gap"], reverse=True)[:3]]}
+
+
+async def generate_dream_role_paths(employee_skills: dict, dream_roles: list, current_role: str = ""):
+    """Generate learning paths needed to qualify for dream roles."""
+    prompt = f"""
+    You are a career development AI advisor. An employee wants to reach their dream roles.
+    
+    Current Role: {current_role}
+    Current Skills: {json.dumps(employee_skills)}
+    Dream Roles: {json.dumps(dream_roles)}
+    
+    For each dream role, provide:
+    1. An estimated readiness percentage (0-100)
+    2. A list of 3-5 skill gaps with specific learning recommendations
+    3. Estimated timeline to be role-ready (in months)
+    4. Recommended learning resources (courses, certifications, projects)
+    
+    Return ONLY a valid JSON object with:
+    {{
+      "paths": [
+        {{
+          "role": "...",
+          "readiness_pct": 65,
+          "timeline_months": 6,
+          "skill_gaps": [{{"skill": "...", "current": 5, "needed": 9, "resources": ["..."]}}],
+          "recommended_actions": ["..."]
+        }}
+      ]
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse dream role paths JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_dream_role_paths failed: {e}")
+        return {"paths": [{"role": r, "readiness_pct": 50, "timeline_months": 12, "skill_gaps": [], "recommended_actions": ["Complete skill assessment"]} for r in dream_roles]}
+
+
+async def generate_adaptive_questions(job_title, job_desc, previous_answers=None, difficulty_level="medium"):
+    """Generate adaptive interview questions based on previous answer quality."""
+    context = ""
+    if previous_answers:
+        context = f"""
+        Previous Q&A (analyze depth of knowledge shown):
+        {json.dumps(previous_answers[-3:])}  
+        
+        Based on the quality of previous answers, adjust difficulty:
+        - If answers show deep expertise → ask architectural/system-design level questions
+        - If answers are surface-level → ask more fundamental questions
+        - Skip topics already well-covered
+        """
+    
+    prompt = f"""
+    You are an adaptive interviewer AI. Generate the NEXT interview question for this role.
+    
+    Role: {job_title}
+    Job Description: {job_desc}
+    Current Difficulty Level: {difficulty_level}
+    {context}
+    
+    Return ONLY a valid JSON object:
+    {{
+      "question": "The next question text",
+      "difficulty": "easy|medium|hard|expert",
+      "category": "behavioral|technical|problem_solving|scenario|culture_fit",
+      "follow_up_hint": "A brief note on what a strong answer would cover"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse adaptive question JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_adaptive_questions failed: {e}")
+        return {
+            "question": f"Tell us about your most challenging experience related to {job_title}.",
+            "difficulty": difficulty_level,
+            "category": "behavioral",
+            "follow_up_hint": "Look for specific examples and outcomes"
+        }
+
+
+async def analyze_soft_skills(qa_pairs: list):
+    """Analyze communication clarity, confidence, and technical accuracy from interview responses."""
+    qa_text = "\n".join([f"Q: {qa['question']}\nA: {qa['answer']}\n" for qa in qa_pairs])
+    
+    prompt = f"""
+    You are an expert communication and behavioral analyst. Analyze these interview responses for soft skills.
+    
+    Interview Transcript:
+    {qa_text}
+    
+    Evaluate and return ONLY a valid JSON object:
+    {{
+      "communication_clarity": {{
+        "score": 85,
+        "feedback": "Brief analysis of how clearly the candidate communicated",
+        "tips": ["Improvement suggestion 1", "Improvement suggestion 2"]
+      }},
+      "confidence_level": {{
+        "score": 78,
+        "feedback": "Analysis of confidence in responses",
+        "indicators": ["Positive indicator", "Area to improve"]
+      }},
+      "technical_accuracy": {{
+        "score": 90,
+        "feedback": "How accurate and deep were the technical responses"
+      }},
+      "structure_organization": {{
+        "score": 72,
+        "feedback": "How well-structured were the answers (STAR method, etc.)"
+      }},
+      "overall_impression": "2-3 sentence summary of the candidate's soft skill profile"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse soft skills JSON")
+    except Exception as e:
+        print(f"[ai_engine] analyze_soft_skills failed: {e}")
+        return {
+            "communication_clarity": {"score": 0, "feedback": "Analysis unavailable", "tips": []},
+            "confidence_level": {"score": 0, "feedback": "Analysis unavailable", "indicators": []},
+            "technical_accuracy": {"score": 0, "feedback": "Analysis unavailable"},
+            "structure_organization": {"score": 0, "feedback": "Analysis unavailable"},
+            "overall_impression": "Soft skill analysis could not be completed due to a system error."
+        }
+
+
+async def generate_competency_spider(job_title, job_desc, qa_pairs):
+    """Generate a 7-axis behavioral competency scorecard (spider chart data)."""
+    qa_text = "\n".join([f"Q{i+1}: {qa['question']}\nA{i+1}: {qa['answer']}\n" for i, qa in enumerate(qa_pairs)])
+    
+    prompt = f"""
+    You are an expert HR behavioral assessor. Score this candidate on 7 competency axes.
+    
+    Role: {job_title}
+    Description: {job_desc}
+    
+    Interview Transcript:
+    {qa_text}
+    
+    Score each competency from 0-100 and provide a brief justification.
+    Return ONLY a valid JSON object:
+    {{
+      "competencies": [
+        {{"name": "Problem Solving", "score": 85, "justification": "..."}},
+        {{"name": "Communication", "score": 78, "justification": "..."}},
+        {{"name": "Technical Depth", "score": 90, "justification": "..."}},
+        {{"name": "Leadership Potential", "score": 65, "justification": "..."}},
+        {{"name": "Cultural Fit", "score": 80, "justification": "..."}},
+        {{"name": "Adaptability", "score": 72, "justification": "..."}},
+        {{"name": "Domain Expertise", "score": 88, "justification": "..."}}
+      ],
+      "overall_band": "A|B|C|D",
+      "hire_confidence": 82
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse competency spider JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_competency_spider failed: {e}")
+        return {
+            "competencies": [
+                {"name": "Problem Solving", "score": 0, "justification": "Unavailable"},
+                {"name": "Communication", "score": 0, "justification": "Unavailable"},
+                {"name": "Technical Depth", "score": 0, "justification": "Unavailable"},
+                {"name": "Leadership Potential", "score": 0, "justification": "Unavailable"},
+                {"name": "Cultural Fit", "score": 0, "justification": "Unavailable"},
+                {"name": "Adaptability", "score": 0, "justification": "Unavailable"},
+                {"name": "Domain Expertise", "score": 0, "justification": "Unavailable"}
+            ],
+            "overall_band": "N/A",
+            "hire_confidence": 0
+        }
+
+
+async def analyze_sentiment_integrity(qa_pairs):
+    """Analyze sentiment and flag inconsistencies, distress, or hesitation."""
+    qa_text = "\n".join([f"Q{i+1}: {qa['question']}\nA{i+1}: {qa['answer']}\n" for i, qa in enumerate(qa_pairs)])
+    
+    prompt = f"""
+    You are an expert behavioral psychologist analyzing interview responses.
+    
+    Interview Transcript:
+    {qa_text}
+    
+    Analyze for:
+    1. Consistency: Are answers consistent with each other? Flag contradictions.
+    2. Confidence markers: Language patterns suggesting high/low confidence.
+    3. Preparation level: Evidence of preparation vs. improvisation.
+    4. Stress indicators: Signs of distress, burnout, or dissatisfaction.
+    5. Integrity flags: Potential exaggerations or inconsistencies.
+    
+    Return ONLY a valid JSON object:
+    {{
+      "consistency_score": 85,
+      "confidence_markers": {{"level": "High|Medium|Low", "indicators": ["..."]}},
+      "preparation_level": {{"level": "Well Prepared|Moderate|Underprepared", "evidence": "..."}},
+      "stress_indicators": {{"detected": false, "notes": "..."}},
+      "integrity_flags": [{{"question_number": 3, "flag": "Possible exaggeration", "detail": "..."}}],
+      "overall_assessment": "Brief 2-sentence assessment"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse sentiment integrity JSON")
+    except Exception as e:
+        print(f"[ai_engine] analyze_sentiment_integrity failed: {e}")
+        return {
+            "consistency_score": 0,
+            "confidence_markers": {"level": "Unknown", "indicators": []},
+            "preparation_level": {"level": "Unknown", "evidence": "Analysis unavailable"},
+            "stress_indicators": {"detected": False, "notes": "Analysis unavailable"},
+            "integrity_flags": [],
+            "overall_assessment": "Sentiment analysis could not be completed."
+        }
+
+
+async def generate_ai_resume(employee_data: dict, job_data: dict):
+    """Generate a pre-filled internal application highlighting actual achievements."""
+    prompt = f"""
+    You are an expert internal recruitment AI. Generate a pre-filled internal job application
+    that highlights the employee's actual achievements within the company.
+    
+    Employee Profile:
+    {json.dumps(employee_data)}
+    
+    Target Role:
+    {json.dumps(job_data)}
+    
+    Create a compelling internal application that:
+    1. Maps existing skills to role requirements
+    2. Highlights relevant internal achievements and projects
+    3. Shows growth trajectory within the company
+    4. Includes a tailored cover statement
+    
+    Return ONLY a valid JSON object:
+    {{
+      "cover_statement": "A compelling 3-4 sentence cover statement",
+      "skill_mapping": [{{"requirement": "...", "evidence": "How employee meets this", "strength": "strong|moderate|developing"}}],
+      "key_achievements": ["Achievement 1 with metrics", "Achievement 2"],
+      "growth_narrative": "2-3 sentences about career growth within company",
+      "recommended_talking_points": ["Point for interview"]
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse AI resume JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_ai_resume failed: {e}")
+        return {
+            "cover_statement": "Unable to generate AI resume at this time.",
+            "skill_mapping": [],
+            "key_achievements": [],
+            "growth_narrative": "",
+            "recommended_talking_points": []
+        }
+
+
+async def generate_highlights_reel(qa_pairs, evaluation):
+    """Extract top 3 critical interview moments for a highlights reel."""
+    qa_text = "\n".join([f"Q{i+1}: {qa['question']}\nA{i+1}: {qa['answer']}\n" for i, qa in enumerate(qa_pairs)])
+    
+    prompt = f"""
+    You are an expert interview analyst. From this full interview transcript, extract the TOP 3 most
+    critical moments that a hiring manager MUST see. These should be the moments that most strongly
+    indicate whether to hire or not.
+    
+    Full Transcript:
+    {qa_text}
+    
+    Overall Evaluation Summary: {json.dumps(evaluation) if evaluation else "Not available"}
+    
+    Return ONLY a valid JSON object:
+    {{
+      "highlights": [
+        {{
+          "question_number": 3,
+          "question": "The question asked",
+          "answer_excerpt": "The most impactful 2-3 sentences from the answer",
+          "significance": "Why this moment matters (1 sentence)",
+          "sentiment": "positive|negative|neutral",
+          "tag": "Strong Technical Answer|Red Flag|Leadership Evidence|etc"
+        }}
+      ],
+      "executive_summary": "2-sentence summary a manager can read in 10 seconds",
+      "hire_signal": "Strong Hire|Hire|Lean Hire|Lean No Hire|No Hire"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse highlights reel JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_highlights_reel failed: {e}")
+        return {
+            "highlights": [],
+            "executive_summary": "Highlights reel could not be generated.",
+            "hire_signal": "Review Manually"
+        }
+
+
 async def analyze_leave_impact(leave_data: dict, team_data: str):
     prompt = f"""
     You are an expert HR AI analyzing the impact of an employee's leave request.
@@ -314,3 +698,309 @@ async def analyze_leave_impact(leave_data: dict, team_data: str):
             "ai_milestone_conflict": "None",
             "ai_succession_backup": "None"
         }
+
+
+async def run_career_simulation(employee_data: dict):
+    """
+    Autonomous Career Simulation: Predicts the executive role an employee
+    will be ready for in 24 months and the specific training investment needed.
+    """
+    prompt = f"""
+    You are a world-class executive career strategist AI. Run a "What-If" career simulation.
+
+    Employee Profile:
+    - Name: {employee_data.get('name', 'Employee')}
+    - Current Role: {employee_data.get('current_role', 'N/A')}
+    - Department: {employee_data.get('department', 'N/A')}
+    - Skills: {json.dumps(employee_data.get('skills', {}))}
+    - Performance Score (last cycle): {employee_data.get('performance_score', 'N/A')}
+    - Potential Score: {employee_data.get('potential_score', 'N/A')}
+    - Tenure: {employee_data.get('tenure_months', 0)} months
+    - Recent Mood Trend: {employee_data.get('mood_trend', 'Neutral')}
+    - Interview Scores: {employee_data.get('interview_scores', 'N/A')}
+
+    QUESTION: If this employee continues at their current trajectory, what executive-level
+    or senior leadership role will they be ready for in 24 months? What specific training
+    (worth approximately $3,000 USD) would accelerate this path right now?
+
+    Return ONLY a valid JSON object:
+    {{
+      "predicted_role": "VP of Engineering",
+      "confidence_pct": 78,
+      "timeline_months": 24,
+      "current_readiness_pct": 62,
+      "training_investment": {{
+        "total_cost_usd": 2950,
+        "courses": [
+          {{"title": "...", "provider": "...", "cost_usd": 800, "duration": "6 weeks", "impact": "High"}},
+          {{"title": "...", "provider": "...", "cost_usd": 1200, "duration": "8 weeks", "impact": "Critical"}},
+          {{"title": "...", "provider": "...", "cost_usd": 950, "duration": "4 weeks", "impact": "Medium"}}
+        ]
+      }},
+      "milestones": [
+        {{"month": 3, "milestone": "Complete certification X"}},
+        {{"month": 6, "milestone": "Lead cross-functional project"}},
+        {{"month": 12, "milestone": "Manage a team of 5+"}},
+        {{"month": 18, "milestone": "Present to C-suite"}},
+        {{"month": 24, "milestone": "Ready for promotion"}}
+      ],
+      "risk_factors": ["Factor 1", "Factor 2"],
+      "executive_summary": "2-3 sentence summary of this employee's trajectory"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse career simulation JSON")
+    except Exception as e:
+        print(f"[ai_engine] run_career_simulation failed: {e}")
+        return {
+            "predicted_role": "Senior " + employee_data.get('current_role', 'Leader'),
+            "confidence_pct": 50,
+            "timeline_months": 24,
+            "current_readiness_pct": 40,
+            "training_investment": {"total_cost_usd": 3000, "courses": []},
+            "milestones": [],
+            "risk_factors": ["Insufficient data for accurate prediction"],
+            "executive_summary": "Career simulation requires more data points for a confident prediction."
+        }
+
+
+async def generate_nine_box(employees_data: list):
+    """Generate 9-Box Potential vs Performance matrix placement for employees."""
+    prompt = f"""
+    You are an expert talent strategist. Place these employees on a 9-Box Grid
+    (X-axis: Performance Low/Med/High, Y-axis: Potential Low/Med/High).
+
+    Employee Data:
+    {json.dumps(employees_data[:20])}
+
+    Return ONLY a valid JSON object:
+    {{
+      "placements": [
+        {{
+          "employee_id": 1,
+          "employee_name": "...",
+          "performance_band": "High",
+          "potential_band": "High",
+          "grid_position": [3, 3],
+          "label": "Star",
+          "action": "Promote / Fast-track"
+        }}
+      ],
+      "summary": "Brief summary of the talent distribution"
+    }}
+
+    Grid labels: [1,1]=Underperformer, [2,1]=Effective, [3,1]=Trusted Professional,
+    [1,2]=Inconsistent, [2,2]=Core Player, [3,2]=High Performer,
+    [1,3]=Rough Diamond, [2,3]=Rising Star, [3,3]=Star
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse 9-box JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_nine_box failed: {e}")
+        return {"placements": [], "summary": "9-Box analysis unavailable."}
+
+
+async def analyze_sentiment_trend(feedbacks: list):
+    """Analyze if peer feedback sentiment is trending positive or negative over time."""
+    prompt = f"""
+    You are an expert organizational psychologist. Analyze these peer feedback entries
+    over time and identify sentiment trends.
+
+    Feedback Entries (chronological):
+    {json.dumps(feedbacks[:30])}
+
+    Return ONLY a valid JSON object:
+    {{
+      "overall_trend": "Improving|Stable|Declining",
+      "trend_score": 0.72,
+      "periods": [
+        {{"period": "Recent", "avg_sentiment": 0.8, "sample_size": 5}},
+        {{"period": "Previous", "avg_sentiment": 0.6, "sample_size": 4}}
+      ],
+      "friction_alerts": [
+        {{"department": "...", "severity": "High|Medium|Low", "description": "..."}}
+      ],
+      "summary": "2-sentence trend analysis"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse sentiment trend JSON")
+    except Exception as e:
+        print(f"[ai_engine] analyze_sentiment_trend failed: {e}")
+        return {"overall_trend": "Stable", "trend_score": 0.5, "periods": [], "friction_alerts": [], "summary": "Trend analysis unavailable."}
+
+
+async def generate_employee_growth_report(employee_data: dict):
+    """Generate a 360-degree self-growth intelligence report for an employee."""
+    prompt = f"""
+    You are an expert career development AI. Generate a comprehensive self-growth report.
+
+    Employee Profile:
+    {json.dumps(employee_data)}
+
+    Return ONLY a valid JSON object:
+    {{
+      "kpi_alignment_score": 82,
+      "kpi_alignment_detail": "Brief explanation of how actions align with company roadmap",
+      "skill_growth": {{
+        "start_of_period": {{"Python": 7, "Leadership": 5}},
+        "end_of_period": {{"Python": 8, "Leadership": 7}},
+        "growth_pct": 15
+      }},
+      "peer_collaboration_score": 78,
+      "peer_collaboration_detail": "Assisted 3 peers, co-authored 2 projects",
+      "voice_session_summary": {{
+        "confidence_avg": 82,
+        "clarity_avg": 78,
+        "sessions_completed": 2
+      }},
+      "mood_productivity_correlation": {{
+        "correlation": "Positive",
+        "detail": "Energized days showed 23% higher output"
+      }},
+      "milestone_badges": ["First Interview Completed", "Skill Gap Closed: React"],
+      "promotion_readiness_pct": 72,
+      "disengagement_risk": 15,
+      "executive_summary": "3-sentence overall growth assessment"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt[:32000])
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse growth report JSON")
+    except Exception as e:
+        print(f"[ai_engine] generate_employee_growth_report failed: {e}")
+        return {
+            "kpi_alignment_score": 0, "kpi_alignment_detail": "Unavailable",
+            "skill_growth": {"start_of_period": {}, "end_of_period": {}, "growth_pct": 0},
+            "peer_collaboration_score": 0, "peer_collaboration_detail": "Unavailable",
+            "voice_session_summary": {"confidence_avg": 0, "clarity_avg": 0, "sessions_completed": 0},
+            "mood_productivity_correlation": {"correlation": "Unknown", "detail": "Unavailable"},
+            "milestone_badges": [], "promotion_readiness_pct": 0, "disengagement_risk": 0,
+            "executive_summary": "Growth report could not be generated."
+        }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SUCCESSION PLANNING INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def analyze_succession_pipeline(org_data: dict):
+    """Generates Pipeline Intelligence for the organization: bench strength, gaps, overlaps."""
+    prompt = f"""
+    You are an elite Enterprise Succession Architect. Analyze this organization's data 
+    and output Pipeline Intelligence.
+    
+    Org Data: {json.dumps(org_data)[:20000]}
+    
+    Return ONLY a valid JSON object:
+    {{
+      "bench_strength": [
+        {{"role": "CTO", "ready_now": 0, "ready_1yr": 1, "ready_2yr": 2}},
+        {{"role": "VP of Engineering", "ready_now": 1, "ready_1yr": 2, "ready_2yr": 0}}
+      ],
+      "attrition_risks": [
+        {{"employee_name": "...", "role": "...", "reason": "High burnout score / Low engagement"}}
+      ],
+      "succession_gaps": [
+        {{"critical_role": "...", "alert": "Zero internal successors mapped"}}
+      ],
+      "skills_overlap_analysis": [
+        {{"employee_name": "...", "issue": "Mapped to 3 different executive roles, creating single point of failure risk"}}
+      ]
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        return json.loads(text[start:end]) if start != -1 else {"bench_strength": [], "attrition_risks": [], "succession_gaps": [], "skills_overlap_analysis": []}
+    except:
+        return {"bench_strength": [], "attrition_risks": [], "succession_gaps": [], "skills_overlap_analysis": []}
+
+
+async def run_shadow_pipeline_simulation(employee_data: dict, target_role: str):
+    """Autonomous Leadership Simulation (Shadow Pipeline) for Future Stars."""
+    prompt = f"""
+    You are a Leadership Assessment Engine. Provide a micro-gig simulation for an employee mapped as a 'Future Star'.
+    
+    Employee Data: {json.dumps(employee_data)}
+    Target Role: {target_role}
+    
+    Task: Create a realistic, high-stakes (but non-critical) decision-making scenario for the {target_role} role. 
+    Then, based on the employee's skills and performance history, predict their 'Shadow Score' (out of 100) 
+    indicating how well they would naturally handle this scenario right now.
+    
+    Return ONLY a valid JSON object:
+    {{
+      "scenario_title": "Crisis Comm: Service Outage",
+      "scenario_description": "A critical 3rd-party API has gone down during a major product launch. How do you allocate engineering resources while managing stakeholder panic?",
+      "predicted_shadow_score": 82,
+      "readiness_proof": "Employee's historical crisis management and high React/Backend skills suggest a methodical approach, but lacks external stakeholder comms experience.",
+      "recommended_action": "Assign them to shadow the upcoming Q3 post-mortem meeting."
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        return json.loads(text[start:end]) if start != -1 else {"scenario_title": "Error", "predicted_shadow_score": 0}
+    except:
+        return {"scenario_title": "Scenario Generation Failed", "predicted_shadow_score": 0, "readiness_proof": "", "recommended_action": ""}
+
+
+async def analyze_employee_succession_profile(employee_data: dict, target_role_reqs: dict):
+    """Analyzes skill gaps, pre-onboarding readiness, and leadership badges for the employee's Goal Role."""
+    prompt = f"""
+    You are an Executive Career Coach AI. Analyze the gap between an employee's current state and their 'Goal Role'.
+    
+    Employee Data: {json.dumps(employee_data)}
+    Target Role Requirements: {json.dumps(target_role_reqs)}
+    
+    Return ONLY a valid JSON object:
+    {{
+      "goal_role": "{target_role_reqs.get('title', 'Target Role')}",
+      "pre_onboarding_readiness_pct": 65,
+      "skill_gaps": [
+        {{"skill": "Cloud Architecture", "current": 3, "required": 8, "recommended_path": "AWS Solutions Architect Cert"}}
+      ],
+      "leadership_badges": [
+        {{"badge": "Strategist", "earned": true, "reason": "Consistently praised for long-term vision in peer reviews"}},
+        {{"badge": "Mentor", "earned": false, "reason": "Requires more active junior developer assistance"}}
+      ],
+      "mentor_match_recommendation": "Should be paired with current Director of Engineering",
+      "global_mobility_flag": "Ready for EMEA roles based on willingness to relocate"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        return json.loads(text[start:end]) if start != -1 else {"goal_role": "Unknown", "pre_onboarding_readiness_pct": 0, "skill_gaps": [], "leadership_badges": []}
+    except:
+        return {"goal_role": "Unknown", "pre_onboarding_readiness_pct": 0, "skill_gaps": [], "leadership_badges": [], "mentor_match_recommendation": ""}

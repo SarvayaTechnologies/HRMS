@@ -47,19 +47,34 @@ function EmployeeAttendance() {
     const offlinePunches = JSON.parse(localStorage.getItem('offline_punches') || '[]');
     if (offlinePunches.length === 0) return;
     
+    let remainingQueue = [];
+    let syncedAny = false;
+    
     for (const punch of offlinePunches) {
       try {
-        await fetch("http://localhost:8001/attendance/punch", {
+        const res = await fetch("http://localhost:8001/attendance/punch", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({...punch, is_offline_sync: true}),
         });
+        if (!res.ok) {
+           remainingQueue.push(punch);
+        } else {
+           syncedAny = true;
+        }
       } catch (err) {
         console.error("Failed to sync offline punch", err);
+        remainingQueue.push(punch);
       }
     }
-    localStorage.removeItem('offline_punches');
-    fetchRecords();
+    
+    if (remainingQueue.length > 0) {
+       localStorage.setItem('offline_punches', JSON.stringify(remainingQueue));
+    } else {
+       localStorage.removeItem('offline_punches');
+    }
+    
+    if (syncedAny) fetchRecords();
   };
 
   const fetchRecords = async () => {
