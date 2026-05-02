@@ -281,3 +281,36 @@ async def evaluate_interview_performance(job_title, job_desc, qa_pairs):
             "weaknesses": ["Evaluation could not be completed"],
             "question_scores": []
         }
+
+async def analyze_leave_impact(leave_data: dict, team_data: str):
+    prompt = f"""
+    You are an expert HR AI analyzing the impact of an employee's leave request.
+    
+    Leave Data:
+    {json.dumps(leave_data)}
+    
+    Team Context (other leaves, milestones, etc.):
+    {team_data}
+    
+    Return a VALID JSON object with:
+    1. "ai_impact_score": Float (0-10, where 10 is very high negative impact)
+    2. "ai_milestone_conflict": String (describe any conflicts or "None")
+    3. "ai_succession_backup": String (suggest a role or name for backup based on the context, or "None")
+    
+    Return ONLY the JSON object.
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        raise ValueError("Could not parse leave impact JSON")
+    except Exception as e:
+        print(f"[ai_engine] analyze_leave_impact failed: {e}")
+        return {
+            "ai_impact_score": 0.0,
+            "ai_milestone_conflict": "None",
+            "ai_succession_backup": "None"
+        }

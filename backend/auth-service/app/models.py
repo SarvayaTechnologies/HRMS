@@ -91,6 +91,18 @@ class LeaveRequest(Base):
     end_date = Column(Date)
     reason = Column(String)
     status = Column(String, default=LeaveStatus.PENDING)
+    
+    # Contextual Leave Additions
+    handover_link = Column(String, nullable=True)
+    point_of_person_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    wellness_check_requested = Column(Boolean, default=False)
+    
+    # AI Impact Analytics
+    ai_impact_score = Column(Float, nullable=True)
+    ai_milestone_conflict = Column(String, nullable=True)
+    ai_succession_backup = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class SalaryStructure(Base):
     __tablename__ = "salary_structures"

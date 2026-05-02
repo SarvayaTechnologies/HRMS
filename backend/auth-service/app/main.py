@@ -289,18 +289,32 @@ async def apply_leave(data: dict, db: Session = Depends(database.get_db), curren
         db.commit()
         db.refresh(employee)
         
-    from datetime import datetime
+    from . import ai_engine
+    
+    # Gather contextual data for AI analysis
+    # In a real app, we'd fetch actual project milestones and other team leaves here.
+    # For now, we'll provide a descriptive summary of the context.
+    team_context = f"Employee in department {employee.department}. Analyzing potential conflicts for {data['leave_type']} between {data['start_date']} and {data['end_date']}."
+    
+    impact_analysis = await ai_engine.analyze_leave_impact(data, team_context)
+
     new_leave = models.LeaveRequest(
         employee_id=employee.id,
         leave_type=data['leave_type'],
         start_date=datetime.strptime(data['start_date'], "%Y-%m-%d").date(),
         end_date=datetime.strptime(data['end_date'], "%Y-%m-%d").date(),
         reason=data['reason'],
-        status="pending"
+        status="pending",
+        handover_link=data.get('handover_link'),
+        point_of_person_id=data.get('point_of_person_id'),
+        wellness_check_requested=data.get('wellness_check_requested', False),
+        ai_impact_score=impact_analysis.get('ai_impact_score'),
+        ai_milestone_conflict=impact_analysis.get('ai_milestone_conflict'),
+        ai_succession_backup=impact_analysis.get('ai_succession_backup')
     )
     db.add(new_leave)
     db.commit()
-    return {"message": "Leave request submitted successfully"}
+    return {"message": "Leave request submitted successfully", "impact": impact_analysis}
 
 @app.get("/leave/my-requests")
 async def my_leaves(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -340,7 +354,12 @@ async def all_org_leaves(db: Session = Depends(database.get_db), current_user: m
             "start_date": r.start_date.isoformat() if r.start_date else None,
             "end_date": r.end_date.isoformat() if r.end_date else None,
             "reason": r.reason,
-            "status": r.status
+            "status": r.status,
+            "handover_link": r.handover_link,
+            "wellness_check_requested": r.wellness_check_requested,
+            "ai_impact_score": r.ai_impact_score,
+            "ai_milestone_conflict": r.ai_milestone_conflict,
+            "ai_succession_backup": r.ai_succession_backup
         })
     return result
 
@@ -356,6 +375,24 @@ async def action_leave(leave_id: int, action: str, db: Session = Depends(databas
         raise HTTPException(status_code=404, detail="Leave request not found")
         
     record.status = action + "d" # approved or rejected
+    
+    if action == "approve":
+        # Smart Silence Mode: Update Attendance/User status
+        # In this implementation, we'll assume the most recent attendance entry or a status field
+        employee = db.query(models.Employee).filter(models.Employee.id == record.employee_id).first()
+        if employee:
+            user = db.query(models.User).filter(models.User.id == employee.user_id).first()
+            if user:
+                # Mocking status update - you might want a dedicated status column
+                print(f"[Smart Silence] User {user.full_name} is now OUT OF OFFICE. Muting pings.")
+                
+            # Trigger Auto-Delegation notification to Point of Person
+            if record.point_of_person_id:
+                pop = db.query(models.User).filter(models.User.id == record.point_of_person_id).first()
+                if pop:
+                    print(f"[Auto-Delegate] Notifying {pop.full_name} about delegation from {user.full_name if user else 'Employee'}")
+                    print(f"Handover Notes: {record.reason}. Document: {record.handover_link}")
+
     db.commit()
     return {"status": "success", "message": f"Leave {record.status}"}
 
