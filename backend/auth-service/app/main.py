@@ -2,6 +2,8 @@ import os
 import httpx
 import json
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File
+from pydantic import BaseModel
+from typing import Optional, List
 from .parser import extract_text_from_file
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -2740,4 +2742,81 @@ async def trigger_shadow_pipeline(request: TriggerShadowRequest, db: Session = D
     }
     
     result = await run_shadow_pipeline_simulation(employee_data, request.target_role)
+    return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CULTURAL INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class PulseSubmission(BaseModel):
+    micro_feedback: str
+    psychological_safety: int
+    engagement_drivers: List[str]
+    mood_tags: List[str]
+    cultural_alignment: int
+    anonymous_feedback: Optional[str] = None
+
+@app.post("/culture/submit-pulse")
+async def submit_culture_pulse(request: PulseSubmission, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    # Calculate initial sentiment score based on inputs
+    sentiment_score = (request.psychological_safety * 2 + request.cultural_alignment * 2) / 40.0 # Normalized 0-1
+    
+    pulse = models.PulseResponse(
+        org_id=current_user.organization_id,
+        department=current_user.department,
+        sentiment_score=sentiment_score,
+        anonymous_feedback=request.anonymous_feedback,
+        micro_feedback=request.micro_feedback,
+        psychological_safety=request.psychological_safety,
+        engagement_drivers=json.dumps(request.engagement_drivers),
+        mood_tags=json.dumps(request.mood_tags),
+        cultural_alignment=request.cultural_alignment
+    )
+    db.add(pulse)
+    db.commit()
+    return {"message": "Pulse submitted anonymously"}
+
+@app.get("/culture/org-intelligence")
+async def get_org_culture_intelligence(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from .ai_engine import analyze_culture_map
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    pulses = db.query(models.PulseResponse).filter(models.PulseResponse.org_id == current_user.organization_id).order_by(models.PulseResponse.created_at.desc()).limit(100).all()
+    pulse_data = [{
+        "department": p.department,
+        "sentiment": p.sentiment_score,
+        "micro_feedback": p.micro_feedback,
+        "psychological_safety": p.psychological_safety,
+        "engagement_drivers": json.loads(p.engagement_drivers) if p.engagement_drivers else [],
+        "mood_tags": json.loads(p.mood_tags) if p.mood_tags else [],
+        "alignment": p.cultural_alignment
+    } for p in pulses]
+    
+    # Fetch performance ROI data (average milestone completion etc)
+    # This is a simplification for the demo
+    org_perf_data = {
+        "avg_milestone_completion": 85,
+        "burnout_risks": 12
+    }
+    
+    result = await analyze_culture_map(pulse_data, org_perf_data)
+    return result
+
+@app.get("/culture/intervention-template/{team_name}")
+async def get_culture_intervention(team_name: str, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from .ai_engine import generate_culture_intervention
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+        
+    # Get recent friction points for this team
+    pulses = db.query(models.PulseResponse).filter(
+        models.PulseResponse.org_id == current_user.organization_id,
+        models.PulseResponse.department == team_name
+    ).order_by(models.PulseResponse.created_at.desc()).limit(20).all()
+    
+    frictions = [p.micro_feedback for p in pulses if p.micro_feedback]
+    
+    result = await generate_culture_intervention(team_name, frictions)
     return result

@@ -1004,3 +1004,80 @@ async def analyze_employee_succession_profile(employee_data: dict, target_role_r
         return json.loads(text[start:end]) if start != -1 else {"goal_role": "Unknown", "pre_onboarding_readiness_pct": 0, "skill_gaps": [], "leadership_badges": []}
     except:
         return {"goal_role": "Unknown", "pre_onboarding_readiness_pct": 0, "skill_gaps": [], "leadership_badges": [], "mentor_match_recommendation": ""}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CULTURAL INTELLIGENCE ENGINE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def analyze_culture_map(pulses: list, org_perf_data: dict = None):
+    """Generates the Anonymized Culture Map and ROI correlations."""
+    prompt = f"""
+    You are a Workplace Culture Scientist. Analyze the following anonymized pulse responses 
+    and output a Cultural Intelligence Map.
+    
+    Pulse Data: {json.dumps(pulses)[:20000]}
+    Performance/ROI Data: {json.dumps(org_perf_data) if org_perf_data else "None"}
+    
+    Tasks:
+    1. Generate a Sentiment Heatmap by Department.
+    2. Analyze 'Silent Majority' friction points (common issues among broad groups).
+    3. Calculate Culture-to-Performance ROI (correlation between culture scores and performance).
+    4. Provide Managerial Impact insights.
+    
+    Return ONLY a valid JSON object:
+    {{
+      "heatmap": [
+        {{"department": "Engineering", "sentiment": 4.2, "status": "Thriving"}},
+        {{"department": "Sales", "sentiment": 2.1, "status": "High Friction"}}
+      ],
+      "burnout_correlation": "Culture scores for Support team are 30% lower than avg, correlating with high overtime flags in Burnout Radar.",
+      "silent_majority_insight": "A large cluster of core employees cite 'Meeting Fatigue' as a micro-gripe.",
+      "managerial_impact": [
+        {{"manager_id": "...", "impact": "Positive", "note": "Team sentiment increased by 15% after transition"}}
+      ],
+      "culture_roi": {{
+        "milestone_acceleration": "Teams with high psychological safety are hitting milestones 12% faster.",
+        "retention_value_estimated_usd": 45000
+      }}
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        return json.loads(text[start:end]) if start != -1 else {{}}
+    except:
+        return {{}}
+
+async def generate_culture_intervention(team_name: str, friction_points: list):
+    """Generates a Team Re-Alignment Workshop template for managers when culture drops."""
+    prompt = f"""
+    You are a Team Effectiveness Consultant. A significant drop in sentiment has been detected for the {team_name} team.
+    
+    Friction Points identified: {json.dumps(friction_points)}
+    
+    Generate a 'Team Re-Alignment Workshop' template for the manager.
+    
+    Return ONLY a valid JSON object:
+    {{
+      "workshop_title": "Re-Aligning for Success: {team_name}",
+      "agenda": [
+        {{"time": "15 min", "activity": "Psychological Safety Reset", "description": "Open discussion on feedback safety."}},
+        {{"time": "30 min", "activity": "Addressing Friction", "description": "Specific focus on resolving: {', '.join(friction_points[:3])}"}}
+      ],
+      "manager_scripts": {{
+        "opening": "I've noticed we're facing some challenges as a team...",
+        "closing": "Let's commit to these 3 changes..."
+      }},
+      "follow_up_metrics": ["Psychological Safety Score next week", "Weekly goal clarity survey"]
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        return json.loads(text[start:end]) if start != -1 else {{}}
+    except:
+        return {{}}

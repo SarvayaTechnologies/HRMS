@@ -208,9 +208,20 @@ class PulseSurvey(Base):
 class PulseResponse(Base):
     __tablename__ = "pulse_responses"
     id = Column(Integer, primary_key=True, index=True)
-    survey_id = Column(Integer, ForeignKey("pulse_surveys.id"))
-    sentiment_score = Column(Float) 
-    anonymous_feedback = Column(String)
+    survey_id = Column(Integer, ForeignKey("pulse_surveys.id"), nullable=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    department = Column(String, nullable=True)
+    sentiment_score = Column(Float, nullable=True) 
+    anonymous_feedback = Column(String, nullable=True)
+    
+    # High-Granularity Culture Data
+    micro_feedback = Column(String(140), nullable=True)      # Micro-Shoutout / Micro-Gripe
+    psychological_safety = Column(Integer, nullable=True)    # Slider 1-5
+    engagement_drivers = Column(Text, nullable=True)         # JSON: ["Skill Learned", "Recognition"]
+    mood_tags = Column(Text, nullable=True)                  # JSON: ["Inspired", "Overwhelmed"]
+    cultural_alignment = Column(Integer, nullable=True)      # Purpose Check 1-5
+    manager_id = Column(Integer, nullable=True)              # Anonymized manager reference for Managerial Impact
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class GrievanceCase(Base):
     __tablename__ = "grievance_cases"

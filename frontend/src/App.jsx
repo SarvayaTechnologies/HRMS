@@ -35,6 +35,7 @@ const Onboarding = lazy(() => import('./pages/Onboarding'));
 const CourseCatalog = lazy(() => import('./pages/CourseCatalog'));
 const EmployeePerformance = lazy(() => import('./pages/EmployeePerformance'));
 const EmployeeSuccession = lazy(() => import('./pages/EmployeeSuccession'));
+const CulturePulseEmployee = lazy(() => import('./pages/CulturePulseEmployee'));
 
 function OrgDashboardLayout({ children }) {
   return (
@@ -118,6 +119,7 @@ function App() {
                   <Route path="report" element={<GrievancePortal />} />
                   <Route path="performance" element={<EmployeePerformance />} />
                   <Route path="succession" element={<EmployeeSuccession />} />
+                  <Route path="pulse" element={<CulturePulseEmployee />} />
                   <Route path="*" element={<Navigate to="/employee" replace />} />
                 </Routes>
               </EmployeeDashboardLayout>
