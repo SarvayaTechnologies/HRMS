@@ -1046,9 +1046,188 @@ async def analyze_culture_map(pulses: list, org_perf_data: dict = None):
         text = response.text.strip()
         start = text.find('{')
         end = text.rfind('}') + 1
-        return json.loads(text[start:end]) if start != -1 else {{}}
+        return json.loads(text[start:end]) if start != -1 else {}
     except:
-        return {{}}
+        return {}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WELLNESS NAVIGATOR & ATTRITION INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def analyze_employee_wellness(employee_data: dict):
+    """Private Wellness Navigator for an individual employee — acts as a performance coach."""
+    prompt = f"""
+    You are a Private Wellness Coach AI embedded in an HR platform. Analyze the following 
+    employee's telemetry and produce a personal wellness dashboard. This is PRIVATE to the 
+    employee — never expose individual data to the org.
+
+    Employee Data: {json.dumps(employee_data)[:15000]}
+
+    Tasks:
+    1. Calculate a Work-Life Balance Score (0-100) from Deep Work vs Meeting hours.
+    2. Detect overtime patterns and suggest compensatory leave.
+    3. Identify if their tasks align with their career aspirations (Skill-Drain detection).
+    4. Suggest wellness resources if mood trends are low.
+    5. Recommend "Quiet Mode" recharge blocks if burnout risk is high.
+
+    Return ONLY a valid JSON object:
+    {{
+      "balance_score": 72,
+      "deep_work_hours_weekly": 22,
+      "meeting_hours_weekly": 14,
+      "meeting_fatigue_level": "Moderate",
+      "overtime_streak": {{
+        "consecutive_late_days": 4,
+        "recommendation": "You've worked late 4 days in a row. Consider requesting Friday off."
+      }},
+      "quiet_mode_suggestion": {{
+        "triggered": true,
+        "message": "Your burnout indicators are elevated. Block 2-4 PM tomorrow as a Recharge Block?",
+        "suggested_block": "Tomorrow 2:00 PM - 4:00 PM"
+      }},
+      "skill_drain_alert": {{
+        "triggered": false,
+        "current_task_alignment_pct": 65,
+        "detail": "35% of your time is on tasks outside your growth path. Consider delegating report generation."
+      }},
+      "wellness_resources": [
+        {{"title": "Managing Workplace Stress", "type": "Learning Path", "relevance": "High"}},
+        {{"title": "Company EAP Program", "type": "Benefit", "relevance": "Medium"}}
+      ],
+      "mood_trend": {{
+        "direction": "declining",
+        "avg_last_7_days": 2.8,
+        "insight": "Your energy has dipped since Wednesday. Consider a change of routine."
+      }},
+      "weekly_summary": "You're putting in solid work but burning the candle at both ends. Prioritize recovery this week."
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        return {"balance_score": 0, "weekly_summary": "Wellness analysis unavailable."}
+    except Exception as e:
+        print(f"[ai_engine] analyze_employee_wellness failed: {e}")
+        return {"balance_score": 0, "weekly_summary": "Wellness analysis unavailable."}
+
+
+async def analyze_attrition_intelligence(burnout_data: list, performance_data: dict, leave_data: dict):
+    """Organization-level Attrition Intelligence — aggregated, anonymized strategic decisions."""
+    prompt = f"""
+    You are an Attrition Intelligence Engine for a modern HR platform. Analyze aggregated, 
+    ANONYMIZED workforce data to produce strategic insights. NEVER identify individuals.
+
+    Burnout Telemetry (by team): {json.dumps(burnout_data)[:12000]}
+    Performance Metrics: {json.dumps(performance_data)[:5000]}
+    Leave Patterns: {json.dumps(leave_data)[:5000]}
+
+    Tasks:
+    1. Generate a Burnout Heatmap by Project/Manager showing which projects drive exhaustion.
+    2. Calculate Predictive Resignation Probability per team (not per person) for next 90 days.
+    3. Compute the "Knowledge Loss Index" — institutional memory at risk if high-burnout teams leave.
+    4. Calculate Engagement-to-Burnout Ratio — is high performance sustainable or at cost of health?
+    5. Check Regulatory Compliance flags (IT Act India, GDPR remote work safety standards).
+
+    Return ONLY a valid JSON object:
+    {{
+      "burnout_heatmap": [
+        {{"project": "Project Alpha", "manager": "Engineering Lead", "exhaustion_index": 78, "avg_overtime_hrs": 12, "risk_level": "Critical"}},
+        {{"project": "Project Beta", "manager": "Product Lead", "exhaustion_index": 35, "avg_overtime_hrs": 3, "risk_level": "Healthy"}}
+      ],
+      "resignation_probability": [
+        {{"team": "Engineering", "probability_pct": 32, "confidence": "Medium", "key_driver": "Sustained overtime with declining mood scores"}},
+        {{"team": "Sales", "probability_pct": 12, "confidence": "Low", "key_driver": "Stable indicators"}}
+      ],
+      "knowledge_loss_index": [
+        {{"team": "Engineering", "institutional_memory_risk": "High", "critical_milestones_at_risk": 5, "estimated_replacement_cost_usd": 180000}},
+        {{"team": "Sales", "institutional_memory_risk": "Low", "critical_milestones_at_risk": 1, "estimated_replacement_cost_usd": 25000}}
+      ],
+      "engagement_burnout_ratio": [
+        {{"team": "Engineering", "engagement_score": 85, "burnout_score": 72, "ratio": 1.18, "verdict": "Unsustainable — high output at cost of health"}},
+        {{"team": "Sales", "engagement_score": 70, "burnout_score": 30, "ratio": 2.33, "verdict": "Healthy — balanced performance"}}
+      ],
+      "compliance_flags": [
+        {{"team": "Engineering", "flag": "Overtime exceeds IT Act Section 51 threshold (48 hrs/week) for 3 consecutive weeks", "severity": "High"}},
+        {{"team": "Support", "flag": "No mandatory rest day detected in 10-day window for 2 team members", "severity": "Critical"}}
+      ],
+      "executive_summary": "Engineering team is the primary risk center. 78% exhaustion index with 32% resignation probability suggests immediate intervention needed."
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        return {"burnout_heatmap": [], "resignation_probability": [], "executive_summary": "Analysis unavailable."}
+    except Exception as e:
+        print(f"[ai_engine] analyze_attrition_intelligence failed: {e}")
+        return {"burnout_heatmap": [], "resignation_probability": [], "executive_summary": "Analysis unavailable."}
+
+
+async def run_live_prediction_intervention(burnout_data: list, leave_data: dict, careers_data: dict):
+    """The HRVALY Unique: Live Prediction & Load Balancer — cross-references all systems."""
+    prompt = f"""
+    You are the HRVALY Live Prediction Engine — the most advanced workforce intelligence 
+    system available. Cross-reference ALL of the following data sources to produce a single, 
+    actionable intervention recommendation.
+
+    DATA SOURCES:
+    1. Burnout Radar Data: {json.dumps(burnout_data)[:8000]}
+    2. Leave Management Data: {json.dumps(leave_data)[:5000]}
+    3. Internal Careers / Shadow Pipeline Data: {json.dumps(careers_data)[:5000]}
+
+    YOUR TASK:
+    Identify if any mission-critical team is burning out AND losing capacity (through leaves), 
+    and recommend moving available talent from the Shadow Pipeline or Pre-Qualified Pool to 
+    stabilize workforce health. Be specific with team names, durations, and costs.
+
+    Return ONLY a valid JSON object:
+    {{
+      "alert_level": "Critical",
+      "primary_warning": "Project 'mArgI' at risk. Engineering team burnout at 78% with 2 key leaves approved next week.",
+      "intervention": {{
+        "action": "Temporary Resource Rebalancing",
+        "source_pool": "Shadow Pipeline — Pre-Qualified Talent",
+        "recommended_moves": [
+          {{
+            "from_team": "Core Talent Pool",
+            "to_team": "Engineering",
+            "headcount": 2,
+            "duration_days": 14,
+            "skill_match_pct": 87,
+            "rationale": "2 pre-qualified candidates with React/Node.js skills available for rotation"
+          }}
+        ],
+        "estimated_impact": "Reduces burnout index from 78% to ~55%, prevents 32% resignation probability from materializing.",
+        "cost_of_inaction": "Potential $180,000 in replacement costs + 3-month productivity gap"
+      }},
+      "secondary_recommendations": [
+        "Enforce mandatory 'Recharge Blocks' for Engineering team for 2 weeks",
+        "Defer non-critical milestone deadlines by 5 business days",
+        "Activate Wellness Resource matching for all flagged employees"
+      ],
+      "confidence_score": 82,
+      "data_freshness": "Based on last 14 days of telemetry + current leave calendar"
+    }}
+    """
+    try:
+        response = _call_gemini(prompt)
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end > 0:
+            return json.loads(text[start:end])
+        return {"alert_level": "Unknown", "primary_warning": "Analysis unavailable.", "intervention": {}}
+    except Exception as e:
+        print(f"[ai_engine] run_live_prediction_intervention failed: {e}")
+        return {"alert_level": "Error", "primary_warning": "Prediction engine failed.", "intervention": {}}
 
 async def generate_culture_intervention(team_name: str, friction_points: list):
     """Generates a Team Re-Alignment Workshop template for managers when culture drops."""

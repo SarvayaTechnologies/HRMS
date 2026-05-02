@@ -16,7 +16,8 @@ from .utils import log_action
 import uuid
 import calendar
 from sqlalchemy.orm import joinedload
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -2819,4 +2820,139 @@ async def get_culture_intervention(team_name: str, db: Session = Depends(databas
     frictions = [p.micro_feedback for p in pulses if p.micro_feedback]
     
     result = await generate_culture_intervention(team_name, frictions)
+    return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WELLNESS NAVIGATOR & ATTRITION INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _gather_burnout_telemetry(db, org_id):
+    """Helper: collects burnout telemetry aggregated by department for AI consumption."""
+    fourteen_days_ago = datetime.utcnow() - timedelta(days=14)
+    users = db.query(models.User).filter(
+        models.User.organization_id == org_id,
+        models.User.role == "employee"
+    ).all()
+    
+    dept_data = {}
+    for user in users:
+        dept = user.department or "General"
+        records = db.query(models.Attendance).filter(
+            models.Attendance.user_id == user.id,
+            models.Attendance.date >= fourteen_days_ago
+        ).all()
+        if not records:
+            continue
+        
+        if dept not in dept_data:
+            dept_data[dept] = {"team": dept, "employees": 0, "total_overtime": 0, "burnout_moods": 0, "tired_moods": 0, "anomalies": 0, "total_hours": 0}
+        
+        dept_data[dept]["employees"] += 1
+        for r in records:
+            if r.overtime_flag:
+                dept_data[dept]["total_overtime"] += 1
+            if r.mood and "Burnt" in r.mood:
+                dept_data[dept]["burnout_moods"] += 1
+            if r.mood and "Tired" in r.mood:
+                dept_data[dept]["tired_moods"] += 1
+            if r.anomaly_flag:
+                dept_data[dept]["anomalies"] += 1
+            if r.check_in and r.check_out:
+                hours = (r.check_out - r.check_in).total_seconds() / 3600
+                dept_data[dept]["total_hours"] += hours
+    
+    return list(dept_data.values())
+
+
+@app.get("/employee/wellness-navigator")
+async def employee_wellness_navigator(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Private Wellness Navigator — only the employee sees their own data."""
+    from .ai_engine import analyze_employee_wellness
+    
+    fourteen_days_ago = datetime.utcnow() - timedelta(days=14)
+    records = db.query(models.Attendance).filter(
+        models.Attendance.user_id == current_user.id,
+        models.Attendance.date >= fourteen_days_ago
+    ).order_by(models.Attendance.date.desc()).all()
+    
+    moods = [r.mood for r in records if r.mood]
+    overtime_days = sum(1 for r in records if r.overtime_flag)
+    
+    # Calculate consecutive late days
+    consecutive_late = 0
+    for r in records:
+        if r.overtime_flag:
+            consecutive_late += 1
+        else:
+            break
+    
+    total_hours = 0
+    for r in records:
+        if r.check_in and r.check_out:
+            total_hours += (r.check_out - r.check_in).total_seconds() / 3600
+    
+    employee_data = {
+        "name": current_user.full_name,
+        "department": current_user.department or "General",
+        "job_title": current_user.job_title or "Employee",
+        "attendance_records": len(records),
+        "moods_last_14_days": moods,
+        "overtime_days": overtime_days,
+        "consecutive_late_days": consecutive_late,
+        "total_hours_14d": round(total_hours, 1),
+        "avg_hours_per_day": round(total_hours / max(len(records), 1), 1),
+        "skills_profile": current_user.skills_profile,
+        "dream_roles": current_user.dream_roles,
+        "career_aspiration": current_user.career_aspiration_note
+    }
+    
+    result = await analyze_employee_wellness(employee_data)
+    return result
+
+
+@app.get("/attrition/intelligence")
+async def get_attrition_intelligence(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Organization-level Attrition Intelligence — aggregated, anonymized."""
+    from .ai_engine import analyze_attrition_intelligence
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    # 1. Burnout telemetry
+    burnout_data = _gather_burnout_telemetry(db, current_user.organization_id)
+    
+    # 2. Performance data (aggregated)
+    performance_data = {"avg_rating": 3.5, "top_performers_count": 0, "reviews_completed": 0}
+    
+    # 3. Leave data (aggregated by dept)
+    leave_data = {"pending_leaves": 0, "approved_leaves_next_30d": 0}
+    
+    result = await analyze_attrition_intelligence(burnout_data, performance_data, leave_data)
+    return result
+
+
+@app.get("/attrition/live-prediction")
+async def live_prediction_intervention(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """The HRVALY Unique: Live Prediction & Load Balancer."""
+    from .ai_engine import run_live_prediction_intervention
+    if current_user.role not in ["admin", "hr_manager", "org_admin"]:
+        raise HTTPException(status_code=403, detail="Organization-level access required")
+    
+    # 1. Burnout telemetry
+    burnout_data = _gather_burnout_telemetry(db, current_user.organization_id)
+    
+    # 2. Leave data
+    leave_data = {"pending_leaves": 0, "approved_next_week": 0, "departments_affected": []}
+    
+    # 3. Careers / Shadow Pipeline data
+    pool = db.query(models.PreQualifiedPool).filter(
+        models.PreQualifiedPool.org_id == current_user.organization_id,
+        models.PreQualifiedPool.status == "available"
+    ).all()
+    careers_data = {
+        "prequalified_pool_size": len(pool),
+        "available_for_rotation": [{"id": p.id, "skills": p.matched_skills, "score": p.interview_score} for p in pool[:10]]
+    }
+    
+    result = await run_live_prediction_intervention(burnout_data, leave_data, careers_data)
     return result

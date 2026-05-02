@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Clock, Leaf, BookCheck, Briefcase, 
-  ShieldAlert, Settings, Menu, X, LogOut, Mic, Bell, Target, Award, HeartPulse
+  ShieldAlert, Settings, Menu, X, LogOut, Mic, Bell, Target, Award, HeartPulse, Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -37,6 +37,7 @@ export default function EmployeeSidebar() {
     { name: 'Performance Intelligence', icon: <Target size={20}/>, path: '/employee/performance' },
     { name: 'Succession Planning', icon: <Award size={20}/>, path: '/employee/succession' },
     { name: 'Culture Pulse', icon: <HeartPulse size={20}/>, path: '/employee/pulse' },
+    { name: 'Wellness Navigator', icon: <Shield size={20}/>, path: '/employee/wellness' },
     { name: 'Learning & Development', icon: <BookCheck size={20}/>, path: '/employee/learning' },
     { name: 'AI Interview', icon: <Mic size={20}/>, path: '/employee/interview' },
     { name: 'Anonymous Portal', icon: <ShieldAlert size={20}/>, path: '/employee/report' },
