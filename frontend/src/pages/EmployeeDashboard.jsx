@@ -1,9 +1,28 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Briefcase, Clock, BookOpen, ShieldAlert, Leaf } from 'lucide-react';
 
 export default function EmployeeDashboard() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        const res = await fetch('http://localhost:8001/employee/onboarding-status', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.onboarding_completed) {
+            navigate('/employee/onboarding', { replace: true });
+          }
+        }
+      } catch (e) {}
+    };
+    if (token) checkOnboarding();
+  }, [token]);
 
   const quickLinks = [
     { name: "Attendance", icon: <Clock size={24} />, desc: "Check in & out" },

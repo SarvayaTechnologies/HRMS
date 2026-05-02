@@ -15,7 +15,6 @@ export default function EmployeeSidebar() {
     { name: 'Dashboard', icon: <LayoutDashboard size={20}/>, path: '/employee' },
     { name: 'Attendance', icon: <Clock size={20}/>, path: '/employee/attendance' },
     { name: 'Leave Management', icon: <Leaf size={20}/>, path: '/employee/leave' },
-    { name: 'Learning Path', icon: <BookCheck size={20}/>, path: '/employee/learning' },
     { name: 'Internal Careers', icon: <Briefcase size={20}/>, path: '/employee/careers' },
     { name: 'AI Interview', icon: <Mic size={20}/>, path: '/employee/interview' },
     { name: 'Anonymous Portal', icon: <ShieldAlert size={20}/>, path: '/employee/report' },

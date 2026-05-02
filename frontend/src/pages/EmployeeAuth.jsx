@@ -69,7 +69,7 @@ export default function EmployeeAuth() {
       }
 
       login(data.access_token);
-      navigate('/employee', { replace: true });
+      navigate('/employee/onboarding', { replace: true });
     } catch (err) {
       setError("Could not connect to the server");
     }

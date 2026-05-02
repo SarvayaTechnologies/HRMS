@@ -20,6 +20,24 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     role = Column(String, default="employee")
     organization_id = Column(Integer, ForeignKey("organizations.id"))
+    
+    # Onboarding fields
+    onboarding_completed = Column(Boolean, default=False)
+    employee_code = Column(String, nullable=True)
+    job_title = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+    date_of_joining = Column(Date, nullable=True)
+    reporting_manager = Column(String, nullable=True)
+    employment_type = Column(String, nullable=True)
+    work_location = Column(String, nullable=True)
+    pan_number = Column(String, nullable=True)
+    aadhaar_number = Column(String, nullable=True)
+    bank_account = Column(String, nullable=True)
+    bank_ifsc = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    emergency_contact_name = Column(String, nullable=True)
+    emergency_contact_phone = Column(String, nullable=True)
+    personal_email = Column(String, nullable=True)
 
 class Employee(Base):
     __tablename__ ="employees"

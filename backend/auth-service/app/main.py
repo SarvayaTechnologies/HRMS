@@ -23,6 +23,23 @@ _migration_columns = [
     ("internal_job_applications", "interview_answers", "TEXT"),
     ("internal_job_applications", "interview_evaluation", "TEXT"),
     ("internal_job_applications", "interview_result", "VARCHAR"),
+    # Onboarding fields on users table
+    ("users", "onboarding_completed", "BOOLEAN DEFAULT FALSE"),
+    ("users", "employee_code", "VARCHAR"),
+    ("users", "job_title", "VARCHAR"),
+    ("users", "department", "VARCHAR"),
+    ("users", "date_of_joining", "DATE"),
+    ("users", "reporting_manager", "VARCHAR"),
+    ("users", "employment_type", "VARCHAR"),
+    ("users", "work_location", "VARCHAR"),
+    ("users", "pan_number", "VARCHAR"),
+    ("users", "aadhaar_number", "VARCHAR"),
+    ("users", "bank_account", "VARCHAR"),
+    ("users", "bank_ifsc", "VARCHAR"),
+    ("users", "phone_number", "VARCHAR"),
+    ("users", "emergency_contact_name", "VARCHAR"),
+    ("users", "emergency_contact_phone", "VARCHAR"),
+    ("users", "personal_email", "VARCHAR"),
 ]
 with database.engine.connect() as _conn:
     for _table, _col, _type in _migration_columns:
@@ -652,9 +669,76 @@ async def employee_setup_password(data: dict, db: Session = Depends(database.get
     access_token = auth.create_access_token(data={"sub": user.email, "role": user.role, "org_id": user.organization_id})
     return {"access_token": access_token, "token_type": "bearer", "user": {"email": user.email, "role": user.role}}
 
+@app.get("/employee/onboarding-status")
+async def get_onboarding_status(current_user: models.User = Depends(auth.get_current_user)):
+    """Check if employee has completed onboarding."""
+    return {
+        "onboarding_completed": current_user.onboarding_completed or False,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+    }
+
+@app.post("/employee/onboarding")
+async def submit_onboarding(data: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Employee submits their onboarding form."""
+    if current_user.role != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can submit onboarding")
+    
+    # Update all onboarding fields
+    current_user.employee_code = data.get("employee_code", "").strip() or None
+    current_user.job_title = data.get("job_title", "").strip() or None
+    current_user.department = data.get("department", "").strip() or None
+    current_user.reporting_manager = data.get("reporting_manager", "").strip() or None
+    current_user.employment_type = data.get("employment_type", "").strip() or None
+    current_user.work_location = data.get("work_location", "").strip() or None
+    current_user.pan_number = data.get("pan_number", "").strip() or None
+    current_user.aadhaar_number = data.get("aadhaar_number", "").strip() or None
+    current_user.bank_account = data.get("bank_account", "").strip() or None
+    current_user.bank_ifsc = data.get("bank_ifsc", "").strip() or None
+    current_user.phone_number = data.get("phone_number", "").strip() or None
+    current_user.emergency_contact_name = data.get("emergency_contact_name", "").strip() or None
+    current_user.emergency_contact_phone = data.get("emergency_contact_phone", "").strip() or None
+    current_user.personal_email = data.get("personal_email", "").strip() or None
+    
+    # Parse date_of_joining
+    doj = data.get("date_of_joining", "").strip()
+    if doj:
+        try:
+            current_user.date_of_joining = datetime.strptime(doj, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    
+    current_user.onboarding_completed = True
+    db.commit()
+    db.refresh(current_user)
+    
+    return {"message": "Onboarding completed successfully"}
+
+@app.get("/employee/onboarding-data")
+async def get_onboarding_data(current_user: models.User = Depends(auth.get_current_user)):
+    """Get employee's own onboarding data (for pre-filling the form)."""
+    return {
+        "employee_code": current_user.employee_code or "",
+        "job_title": current_user.job_title or "",
+        "department": current_user.department or "",
+        "date_of_joining": str(current_user.date_of_joining) if current_user.date_of_joining else "",
+        "reporting_manager": current_user.reporting_manager or "",
+        "employment_type": current_user.employment_type or "",
+        "work_location": current_user.work_location or "",
+        "pan_number": current_user.pan_number or "",
+        "aadhaar_number": current_user.aadhaar_number or "",
+        "bank_account": current_user.bank_account or "",
+        "bank_ifsc": current_user.bank_ifsc or "",
+        "phone_number": current_user.phone_number or "",
+        "emergency_contact_name": current_user.emergency_contact_name or "",
+        "emergency_contact_phone": current_user.emergency_contact_phone or "",
+        "personal_email": current_user.personal_email or "",
+        "onboarding_completed": current_user.onboarding_completed or False,
+    }
+
 @app.get("/org/employees")
 async def list_org_employees(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
-    """List all employees in the current user's organization."""
+    """List all employees in the current user's organization with onboarding details."""
     if not current_user.organization_id:
         raise HTTPException(status_code=400, detail="You must belong to an organization")
     
@@ -663,7 +747,28 @@ async def list_org_employees(db: Session = Depends(database.get_db), current_use
         models.User.role == "employee"
     ).all()
     
-    return [{"id": e.id, "email": e.email, "full_name": e.full_name, "has_password": e.hashed_password is not None} for e in employees]
+    return [{
+        "id": e.id,
+        "email": e.email,
+        "full_name": e.full_name,
+        "has_password": e.hashed_password is not None,
+        "onboarding_completed": e.onboarding_completed or False,
+        "employee_code": e.employee_code,
+        "job_title": e.job_title,
+        "department": e.department,
+        "date_of_joining": str(e.date_of_joining) if e.date_of_joining else None,
+        "reporting_manager": e.reporting_manager,
+        "employment_type": e.employment_type,
+        "work_location": e.work_location,
+        "pan_number": e.pan_number,
+        "aadhaar_number": e.aadhaar_number,
+        "bank_account": e.bank_account,
+        "bank_ifsc": e.bank_ifsc,
+        "phone_number": e.phone_number,
+        "emergency_contact_name": e.emergency_contact_name,
+        "emergency_contact_phone": e.emergency_contact_phone,
+        "personal_email": e.personal_email,
+    } for e in employees]
 
 from pydantic import BaseModel
 
