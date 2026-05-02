@@ -41,6 +41,17 @@ _migration_columns = [
     ("users", "emergency_contact_name", "VARCHAR"),
     ("users", "emergency_contact_phone", "VARCHAR"),
     ("users", "personal_email", "VARCHAR"),
+    # Grievance fields
+    ("grievance_cases", "org_id", "INTEGER"),
+    ("grievance_cases", "reporter_id", "INTEGER"),
+    ("grievance_cases", "first_occurred", "DATE"),
+    ("grievance_cases", "last_occurred", "DATE"),
+    ("grievance_cases", "impact", "VARCHAR"),
+    ("grievance_cases", "desired_resolution", "VARCHAR"),
+    ("grievance_cases", "anonymous_chat_key", "VARCHAR"),
+    ("grievance_cases", "sentiment_label", "VARCHAR"),
+    ("grievance_cases", "department", "VARCHAR"),
+    ("grievance_cases", "deadline", "VARCHAR"),
 ]
 with database.engine.connect() as _conn:
     for _table, _col, _type in _migration_columns:
@@ -1338,3 +1349,97 @@ async def get_interview_results(job_id: int, db: Session = Depends(database.get_
             "applied_at": a.applied_at.isoformat() if a.applied_at else None
         })
     return results
+
+# --- Grievance & Compliance Intelligence ---
+
+@app.post("/culture/report-grievance")
+async def report_grievance(payload: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    case_no = "REP-" + str(uuid.uuid4().hex[:6].upper())
+    
+    impact = payload.get("impact", "Moderate")
+    category = payload.get("category", "")
+    priority = "High" if impact == "Critical" else "Medium" if impact == "High" else "Low"
+    deadline = "48 Hrs (IT Act/GDPR)" if impact == "Critical" else "7 Days" if impact == "High" else "14 Days"
+    sentiment_label = "High Distress" if "Harassment" in category or impact == "Critical" else "Concerned"
+    
+    try:
+        first_occ = datetime.strptime(payload.get("firstOccurred"), "%Y-%m-%d").date() if payload.get("firstOccurred") else None
+        last_occ = datetime.strptime(payload.get("lastOccurred"), "%Y-%m-%d").date() if payload.get("lastOccurred") else None
+    except:
+        first_occ = None
+        last_occ = None
+
+    new_case = models.GrievanceCase(
+        case_number=case_no,
+        org_id=current_user.organization_id,
+        reporter_id=current_user.id,
+        category=category,
+        description=payload.get("description", ""),
+        first_occurred=first_occ,
+        last_occurred=last_occ,
+        impact=impact,
+        desired_resolution=payload.get("desiredResolution", ""),
+        anonymous_chat_key=payload.get("chatKey"),
+        status="Open",
+        priority=priority,
+        sentiment_label=sentiment_label,
+        deadline=deadline,
+        department="General" # Can be deduced or asked
+    )
+    db.add(new_case)
+    db.commit()
+    return {"status": "success", "case_number": case_no}
+
+@app.get("/employee/my-grievances")
+async def get_my_grievances(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    cases = db.query(models.GrievanceCase).filter(models.GrievanceCase.reporter_id == current_user.id).order_by(models.GrievanceCase.id.desc()).all()
+    results = []
+    for c in cases:
+        results.append({
+            "id": c.case_number,
+            "category": c.category,
+            "risk": "Critical" if c.impact == "Critical" else "High" if c.impact == "High" else "Medium",
+            "date": c.created_at.strftime("%b %d, %Y") if c.created_at else "Unknown",
+            "status": c.status,
+            "description": c.description
+        })
+    return {"reports": results}
+
+@app.get("/org/grievances")
+async def get_grievances(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["admin", "manager", "org"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    cases = db.query(models.GrievanceCase).order_by(models.GrievanceCase.id.desc()).all()
+    results = []
+    for c in cases:
+        results.append({
+            "id": c.case_number,
+            "category": c.category,
+            "risk": "Critical" if c.impact == "Critical" else "High" if c.impact == "High" else "Medium",
+            "sentiment": c.sentiment_label,
+            "dept": c.department,
+            "date": c.created_at.strftime("%b %d, %Y") if c.created_at else "Unknown",
+            "deadline": c.deadline,
+            "description": c.description,
+            "status": c.status
+        })
+    return {"reports": results}
+
+@app.post("/org/grievances/{case_number}/action")
+async def take_grievance_action(case_number: str, payload: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["admin", "manager", "org"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    case = db.query(models.GrievanceCase).filter(models.GrievanceCase.case_number == case_number).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    action = payload.get("action")
+    if action == "resolve":
+        case.status = "Resolved"
+    elif action == "investigate":
+        case.status = "Under Investigation"
+    
+    db.commit()
+    return {"status": "success", "case": {"id": case.case_number, "status": case.status}}

@@ -174,10 +174,20 @@ class GrievanceCase(Base):
     __tablename__ = "grievance_cases"
     id = Column(Integer, primary_key=True, index=True)
     case_number = Column(String, unique=True) 
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     category = Column(String) 
     description = Column(String)
+    first_occurred = Column(Date, nullable=True)
+    last_occurred = Column(Date, nullable=True)
+    impact = Column(String, nullable=True)
+    desired_resolution = Column(String, nullable=True)
+    anonymous_chat_key = Column(String, unique=True, index=True)
     status = Column(String, default="Open")
     priority = Column(String) 
+    sentiment_label = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+    deadline = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class AuditLog(Base):
