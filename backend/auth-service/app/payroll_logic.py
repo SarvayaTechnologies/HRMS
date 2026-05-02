@@ -109,6 +109,8 @@ def calculate_monthly_payroll(
     investment_declarations=0,  # 80C + 80D total for old regime
     performance_bonus=0,
     month_name=None,
+    travel_allowance_days=0,
+    overtime_hours=0,
 ):
     """
     Complete monthly payroll calculation for an Indian employee.
@@ -134,7 +136,12 @@ def calculate_monthly_payroll(
     earned_special = round(special_monthly * lop_factor, 2)
     earned_bonus = round(performance_bonus, 2)
     
-    gross_earned = round(earned_basic + earned_hra + earned_special + earned_bonus, 2)
+    # ── Travel Allowance & Overtime ──
+    travel_allowance = round(travel_allowance_days * 300, 2) # ₹300 per day at client site/office if applicable
+    hourly_rate = round(basic_monthly / (total_days_in_month * 8), 2)
+    overtime_pay = round(overtime_hours * hourly_rate * 1.5, 2) # 1.5x basic hourly rate
+    
+    gross_earned = round(earned_basic + earned_hra + earned_special + earned_bonus + travel_allowance + overtime_pay, 2)
     lop_deduction = round((basic_monthly + hra_monthly + special_monthly) - (earned_basic + earned_hra + earned_special), 2)
     
     # ── Employee PF ──
@@ -175,6 +182,8 @@ def calculate_monthly_payroll(
             "basic": earned_basic,
             "hra": earned_hra,
             "special_allowance": earned_special,
+            "travel_allowance": travel_allowance,
+            "overtime_pay": overtime_pay,
             "performance_bonus": earned_bonus,
             "gross": gross_earned,
         },

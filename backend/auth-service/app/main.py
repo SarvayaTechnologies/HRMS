@@ -48,6 +48,7 @@ _migration_columns = [
     ("grievance_cases", "last_occurred", "DATE"),
     ("grievance_cases", "impact", "VARCHAR"),
     ("grievance_cases", "desired_resolution", "VARCHAR"),
+    ("grievance_cases", "evidence_files", "VARCHAR"),
     ("grievance_cases", "anonymous_chat_key", "VARCHAR"),
     ("grievance_cases", "sentiment_label", "VARCHAR"),
     ("grievance_cases", "department", "VARCHAR"),
@@ -436,24 +437,52 @@ async def payroll_org_summary(
         base_salary = salary_info.base_salary if salary_info else 50000.0  # Assume 50k base if not set
         annual_ctc = base_salary * 12
         
-        # Calculate LOP from attendance
-        # In a real app we'd count distinct days they didn't check in or had rejected leaves.
-        # For demo purposes, we will simulate 0-2 LOP days unless data says otherwise.
-        # Let's count missing attendance days (assuming standard 22 working days logic)
-        # We'll use a mocked LOP value of 0 for most, maybe 1 or 2 for some based on ID mod
-        lop_days = emp.id % 3  # Fake LOP: 0, 1, or 2 days
+        # ── Smart Presence Integration: Calculate from real attendance ──
+        month_attendance = db.query(models.Attendance).filter(
+            models.Attendance.user_id == emp.id,
+            models.Attendance.date >= first_date,
+            models.Attendance.date <= last_date,
+            models.Attendance.status == "approved"
+        ).all()
+        
+        # Count distinct approved attendance days
+        attended_dates = set()
+        travel_allowance_days = 0
+        overtime_count = 0
+        for att in month_attendance:
+            if att.date:
+                attended_dates.add(att.date)
+            # Travel Allowance: days at Client Site
+            if att.work_mode == "Client Site":
+                travel_allowance_days += 1
+            # Overtime: count records flagged as overtime
+            if att.overtime_flag:
+                overtime_count += 1
+        
+        # LOP = working days in month - days attended (capped at 0 min)
+        # Assume 22 standard working days per month
+        standard_working_days = 22
+        lop_days = max(standard_working_days - len(attended_dates), 0)
+        # Cap LOP so net pay doesn't go negative for new employees with no attendance data
+        if len(attended_dates) == 0:
+            lop_days = 0  # No attendance records yet — assume full month
+        
+        # Overtime hours estimate: 2 hrs per overtime-flagged day
+        overtime_hours = overtime_count * 2
         
         # Performance Bonus (Mocked integration with Performance Intelligence)
         performance_bonus = (emp.id % 5) * 2000  # Fake bonus
         
-        # Calculate!
+        # Calculate with Smart Presence data!
         result = calculate_monthly_payroll(
             annual_ctc=annual_ctc,
             total_days_in_month=total_days,
             lop_days=lop_days,
             tax_regime="new",  # Can be pulled from user tax declarations table
             performance_bonus=performance_bonus,
-            month_name=today.strftime("%B %Y")
+            month_name=today.strftime("%B %Y"),
+            travel_allowance_days=travel_allowance_days,
+            overtime_hours=overtime_hours,
         )
         
         payroll_entry = {
@@ -473,6 +502,8 @@ async def payroll_org_summary(
             "professional_tax": result["deductions"]["professional_tax"],
             "lop_days": lop_days,
             "lop_deduction": result["deductions"]["lop_deduction"],
+            "travel_allowance": result["earnings"].get("travel_allowance", 0),
+            "overtime_pay": result["earnings"].get("overtime_pay", 0),
             "performance_bonus": performance_bonus,
             "total_rewards": result["net_pay"] + result["employer"]["epf_employer"], # Includes employer contributions
             "net_pay": result["net_pay"],
@@ -647,26 +678,8 @@ async def department_vibe_check(dept: str, db: Session = Depends(database.get_db
     
     return culture_analysis
 
-@app.post("/culture/report-grievance")
-async def report_grievance(data: dict, db: Session = Depends(database.get_db)):
-    case_no = f"CASE-{uuid.uuid4().hex[:6].upper()}"
-    
-    
-    prompt = f"Analyze this workplace report: '{data['description']}'. Categorize it and set a priority (Low to Critical). Return ONLY JSON: {{'category': '...', 'priority': '...'}}"
-    
-    raw_ai_res = await get_ai_response(prompt)
-    analysis = json.loads(raw_ai_res.replace('```json', '').replace('```', '').strip())
-    
-    new_case = models.GrievanceCase(
-        case_number=case_no,
-        category=analysis['category'],
-        description=data['description'],
-        priority=analysis['priority']
-    )
-    db.add(new_case)
-    db.commit()
-    
-    return {"message": "Report submitted anonymously", "case_number": case_no}
+
+# Old /culture/report-grievance endpoint removed — superseded by Smart Presence version below
 
 @app.get("/culture/predict-hotspots")
 async def predict_hotspots(
@@ -899,6 +912,11 @@ from pydantic import BaseModel
 class AttendancePunchBase(BaseModel):
     lat: float = None
     lon: float = None
+    work_mode: str = "Office"
+    device_id: str = None
+    mood: str = None
+    daily_goal: str = None
+    is_offline_sync: bool = False
 
 @app.post("/attendance/punch")
 async def punch_attendance(
@@ -926,26 +944,65 @@ async def punch_attendance(
         else:
             raise HTTPException(status_code=400, detail="Already completed attendance for today")
             
-    # New punch in — auto-approved
+    # Anomaly Detection: Impossible Travel
+    anomaly_flag = None
+    yesterday = today - __import__('datetime').timedelta(days=1)
+    prev_att = db.query(models.Attendance).filter(
+        models.Attendance.user_id == current_user.id,
+        models.Attendance.date == yesterday
+    ).first()
+    
+    if prev_att and prev_att.latitude and prev_att.longitude and data.lat and data.lon:
+        # Simple heuristic: If distance is too large, flag it
+        dist = ((prev_att.latitude - data.lat)**2 + (prev_att.longitude - data.lon)**2)**0.5
+        if dist > 5.0: # Roughly 500km depending on latitude
+            anomaly_flag = "Impossible Travel Detected"
+
+    # LOP Calculation (If after 10 AM, flag as late)
+    now_hour = datetime.utcnow().hour
+    overtime_flag = False # Will be updated on checkout
+
     new_att = models.Attendance(
         user_id=current_user.id,
         check_in=datetime.utcnow(),
         latitude=data.lat,
         longitude=data.lon,
-        status="approved",
-        date=today
+        status="approved" if not anomaly_flag else "flagged",
+        date=today,
+        work_mode=data.work_mode,
+        device_id=data.device_id,
+        mood=data.mood,
+        daily_goal=data.daily_goal,
+        is_offline_sync=data.is_offline_sync,
+        anomaly_flag=anomaly_flag,
+        overtime_flag=overtime_flag
     )
     db.add(new_att)
     db.commit()
     db.refresh(new_att)
-    return {"status": "Checked In", "record_id": new_att.id, "message": "Punch-in recorded successfully."}
+    
+    message = "Punch-in recorded successfully."
+    if anomaly_flag:
+        message += " " + anomaly_flag
+        
+    return {"status": "Checked In", "record_id": new_att.id, "message": message}
 
 
 
 @app.get("/attendance/my-records")
 async def my_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     records = db.query(models.Attendance).filter(models.Attendance.user_id == current_user.id).order_by(models.Attendance.date.desc()).all()
-    return [{"id": r.id, "check_in": r.check_in, "check_out": r.check_out, "status": r.status, "date": r.date.strftime("%Y-%m-%d") if r.date else None} for r in records]
+    return [{
+        "id": r.id, 
+        "check_in": r.check_in, 
+        "check_out": r.check_out, 
+        "status": r.status, 
+        "date": r.date.strftime("%Y-%m-%d") if r.date else None,
+        "work_mode": r.work_mode,
+        "mood": r.mood,
+        "daily_goal": r.daily_goal,
+        "anomaly_flag": r.anomaly_flag
+    } for r in records]
 
 @app.get("/org/attendance/pending")
 async def pending_attendance(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -995,7 +1052,12 @@ async def all_org_attendance(db: Session = Depends(database.get_db), current_use
             "check_in": r.check_in.isoformat() if r.check_in else None,
             "check_out": r.check_out.isoformat() if r.check_out else None,
             "date": r.date.strftime("%Y-%m-%d") if r.date else None,
-            "status": r.status
+            "status": r.status,
+            "work_mode": r.work_mode,
+            "mood": r.mood,
+            "daily_goal": r.daily_goal,
+            "anomaly_flag": r.anomaly_flag,
+            "overtime_flag": r.overtime_flag
         }
         result.append(res)
     return result
@@ -1352,56 +1414,92 @@ async def get_interview_results(job_id: int, db: Session = Depends(database.get_
 
 # --- Grievance & Compliance Intelligence ---
 
+from fastapi import Form
+from typing import List, Optional
+
 @app.post("/culture/report-grievance")
-async def report_grievance(payload: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+async def report_grievance(
+    category: str = Form(...),
+    description: str = Form(...),
+    firstOccurred: Optional[str] = Form(None),
+    lastOccurred: Optional[str] = Form(None),
+    impact: str = Form("Moderate"),
+    desiredResolution: Optional[str] = Form(""),
+    chatKey: Optional[str] = Form(None),
+    files: List[UploadFile] = File(None),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
     case_no = "REP-" + str(uuid.uuid4().hex[:6].upper())
     
-    impact = payload.get("impact", "Moderate")
-    category = payload.get("category", "")
     priority = "High" if impact == "Critical" else "Medium" if impact == "High" else "Low"
     deadline = "48 Hrs (IT Act/GDPR)" if impact == "Critical" else "7 Days" if impact == "High" else "14 Days"
     sentiment_label = "High Distress" if "Harassment" in category or impact == "Critical" else "Concerned"
     
     try:
-        first_occ = datetime.strptime(payload.get("firstOccurred"), "%Y-%m-%d").date() if payload.get("firstOccurred") else None
-        last_occ = datetime.strptime(payload.get("lastOccurred"), "%Y-%m-%d").date() if payload.get("lastOccurred") else None
+        first_occ = datetime.strptime(firstOccurred, "%Y-%m-%d").date() if firstOccurred else None
+        last_occ = datetime.strptime(lastOccurred, "%Y-%m-%d").date() if lastOccurred else None
     except:
         first_occ = None
         last_occ = None
+
+    # Handle file uploads (Mock S3 storage)
+    file_urls = []
+    if files:
+        upload_dir = "uploads/grievance_evidence"
+        os.makedirs(upload_dir, exist_ok=True)
+        for file in files:
+            if file.filename:
+                # Strip metadata - for demo just saving it locally in a secure folder
+                file_id = str(uuid.uuid4().hex[:8]) + "_" + file.filename
+                file_path = os.path.join(upload_dir, file_id)
+                with open(file_path, "wb") as f:
+                    f.write(await file.read())
+                file_urls.append(f"/static/evidence/{file_id}")
 
     new_case = models.GrievanceCase(
         case_number=case_no,
         org_id=current_user.organization_id,
         reporter_id=current_user.id,
         category=category,
-        description=payload.get("description", ""),
+        description=description,
         first_occurred=first_occ,
         last_occurred=last_occ,
         impact=impact,
-        desired_resolution=payload.get("desiredResolution", ""),
-        anonymous_chat_key=payload.get("chatKey"),
+        desired_resolution=desiredResolution,
+        anonymous_chat_key=chatKey,
+        evidence_files=json.dumps(file_urls) if file_urls else None,
         status="Open",
         priority=priority,
         sentiment_label=sentiment_label,
         deadline=deadline,
-        department="General" # Can be deduced or asked
+        department="General"
     )
     db.add(new_case)
     db.commit()
-    return {"status": "success", "case_number": case_no}
+    return {"status": "success", "case_number": case_no, "files_uploaded": len(file_urls)}
 
 @app.get("/employee/my-grievances")
 async def get_my_grievances(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     cases = db.query(models.GrievanceCase).filter(models.GrievanceCase.reporter_id == current_user.id).order_by(models.GrievanceCase.id.desc()).all()
     results = []
     for c in cases:
+        evidence = []
+        try:
+            if c.evidence_files:
+                evidence = json.loads(c.evidence_files)
+        except:
+            pass
         results.append({
             "id": c.case_number,
             "category": c.category,
             "risk": "Critical" if c.impact == "Critical" else "High" if c.impact == "High" else "Medium",
             "date": c.created_at.strftime("%b %d, %Y") if c.created_at else "Unknown",
             "status": c.status,
-            "description": c.description
+            "description": c.description,
+            "evidence_files": evidence,
+            "deadline": c.deadline,
+            "sentiment": c.sentiment_label
         })
     return {"reports": results}
 
@@ -1413,6 +1511,12 @@ async def get_grievances(db: Session = Depends(database.get_db), current_user: m
     cases = db.query(models.GrievanceCase).order_by(models.GrievanceCase.id.desc()).all()
     results = []
     for c in cases:
+        evidence = []
+        try:
+            if c.evidence_files:
+                evidence = json.loads(c.evidence_files)
+        except:
+            pass
         results.append({
             "id": c.case_number,
             "category": c.category,
@@ -1422,7 +1526,8 @@ async def get_grievances(db: Session = Depends(database.get_db), current_user: m
             "date": c.created_at.strftime("%b %d, %Y") if c.created_at else "Unknown",
             "deadline": c.deadline,
             "description": c.description,
-            "status": c.status
+            "status": c.status,
+            "evidence_files": evidence
         })
     return {"reports": results}
 
@@ -1443,3 +1548,62 @@ async def take_grievance_action(case_number: str, payload: dict, db: Session = D
     
     db.commit()
     return {"status": "success", "case": {"id": case.case_number, "status": case.status}}
+
+@app.get("/culture/burnout-radar")
+async def burnout_radar(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["admin", "manager", "org"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    # Calculate burnout risk based on last 14 days
+    fourteen_days_ago = datetime.utcnow() - timedelta(days=14)
+    users = db.query(models.User).filter(models.User.organization_id == current_user.organization_id).all()
+    
+    results = []
+    for user in users:
+        records = db.query(models.Attendance).filter(
+            models.Attendance.user_id == user.id,
+            models.Attendance.date >= fourteen_days_ago
+        ).all()
+        
+        if not records:
+            continue
+            
+        risk_score = 0
+        burnt_out_count = sum(1 for r in records if r.mood == "🔥 Burnt Out")
+        tired_count = sum(1 for r in records if r.mood and "Tired" in r.mood)
+        overtime_count = sum(1 for r in records if r.overtime_flag)
+        anomaly_count = sum(1 for r in records if r.anomaly_flag)
+        
+        if burnt_out_count >= 2:
+            risk_score += 40
+        elif burnt_out_count == 1:
+            risk_score += 20
+            
+        if tired_count >= 3:
+            risk_score += 20
+            
+        if overtime_count >= 2:
+            risk_score += 30
+            
+        if anomaly_count >= 2:
+            risk_score += 10
+            
+        risk_score = min(100, risk_score)
+        
+        if risk_score > 0:
+            results.append({
+                "employee_id": user.id,
+                "employee_name": user.full_name,
+                "department": user.department or "General",
+                "risk_score": risk_score,
+                "indicators": {
+                    "burnt_out_days": burnt_out_count,
+                    "tired_days": tired_count,
+                    "overtime_days": overtime_count,
+                    "anomalies": anomaly_count
+                }
+            })
+            
+    # Sort by highest risk
+    results.sort(key=lambda x: x["risk_score"], reverse=True)
+    return {"burnout_alerts": results[:10]}

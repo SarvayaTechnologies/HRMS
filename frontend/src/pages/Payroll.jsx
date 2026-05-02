@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Wallet, Download, Loader2, Users, TrendingDown, TrendingUp, IndianRupee, 
-  ShieldAlert, ShieldCheck, CheckCircle2, AlertTriangle, Play
+  ShieldAlert, ShieldCheck, CheckCircle2, AlertTriangle, Play, Car, Clock
 } from 'lucide-react';
 
 export default function Payroll() {
@@ -159,6 +159,7 @@ export default function Payroll() {
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase">Employee</th>
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase">Performance Bonus</th>
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase">LOP/Days</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">TA / OT</th>
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Gross Earnings</th>
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">EPF + TDS</th>
                   <th className="p-4 text-xs font-bold text-indigo-600 uppercase text-right">Total Rewards*</th>
@@ -168,7 +169,7 @@ export default function Payroll() {
               <tbody>
                 {data.employees.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-slate-400">
+                    <td colSpan="8" className="p-8 text-center text-slate-400">
                       No employees found.
                     </td>
                   </tr>
@@ -195,6 +196,16 @@ export default function Payroll() {
                         <div className="flex flex-col">
                           <span className="text-sm text-slate-700">{emp.lop_days} days LOP</span>
                           {emp.lop_deduction > 0 && <span className="text-xs text-red-500 font-medium">-₹{emp.lop_deduction.toLocaleString()}</span>}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1">
+                          {emp.travel_allowance > 0 ? (
+                            <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit"><Car size={12}/> +₹{emp.travel_allowance.toLocaleString()}</span>
+                          ) : <span className="text-xs text-slate-400">—</span>}
+                          {emp.overtime_pay > 0 ? (
+                            <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1 w-fit"><Clock size={12}/> +₹{emp.overtime_pay.toLocaleString()}</span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="p-4 text-sm text-slate-600 text-right font-mono font-medium">₹{emp.gross.toLocaleString()}</td>

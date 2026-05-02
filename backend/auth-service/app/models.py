@@ -65,6 +65,15 @@ class Attendance(Base):
     approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime, nullable=True)
     date = Column(Date, default=datetime.utcnow)
+    
+    # Smart Presence Additions
+    work_mode = Column(String, default="Office") 
+    device_id = Column(String, nullable=True)
+    mood = Column(String, nullable=True) 
+    daily_goal = Column(String, nullable=True)
+    is_offline_sync = Column(Boolean, default=False)
+    anomaly_flag = Column(String, nullable=True) 
+    overtime_flag = Column(Boolean, default=False)
 
     user = relationship("User", foreign_keys=[user_id])
 
@@ -182,6 +191,7 @@ class GrievanceCase(Base):
     last_occurred = Column(Date, nullable=True)
     impact = Column(String, nullable=True)
     desired_resolution = Column(String, nullable=True)
+    evidence_files = Column(String, nullable=True)
     anonymous_chat_key = Column(String, unique=True, index=True)
     status = Column(String, default="Open")
     priority = Column(String) 

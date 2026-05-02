@@ -19,6 +19,7 @@ export default function GrievancePortal() {
   const [description, setDescription] = useState("");
   const [impact, setImpact] = useState("");
   const [desiredResolution, setDesiredResolution] = useState("");
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
 
   // Fetch real data
   const fetchMyReports = async () => {
@@ -75,15 +76,25 @@ export default function GrievancePortal() {
     
     setIsLoading(true);
     try {
+      const formData = new FormData();
+      formData.append("category", category);
+      if (firstOccurred) formData.append("firstOccurred", firstOccurred);
+      if (lastOccurred) formData.append("lastOccurred", lastOccurred);
+      formData.append("description", description);
+      formData.append("impact", impact);
+      formData.append("desiredResolution", desiredResolution);
+      formData.append("chatKey", key);
+      
+      evidenceFiles.forEach((file) => {
+        formData.append("files", file);
+      });
+
       const res = await fetch("http://localhost:8001/culture/report-grievance", {
         method: "POST",
         headers: { 
-          "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          category, firstOccurred, lastOccurred, description, impact, desiredResolution, chatKey: key
-        })
+        body: formData
       });
       
       if (!res.ok) {
@@ -97,6 +108,7 @@ export default function GrievancePortal() {
       setDescription("");
       setImpact("");
       setDesiredResolution("");
+      setEvidenceFiles([]);
 
       await fetchMyReports();
       setViewMode("success");
@@ -250,6 +262,18 @@ export default function GrievancePortal() {
                   <div className="bg-slate-50 p-4 rounded-xl text-sm text-slate-700 font-medium mb-4">
                     {report.description}
                   </div>
+
+                  {report.evidence_files && report.evidence_files.length > 0 && (
+                    <div className="mb-4 flex items-center gap-2 flex-wrap">
+                      <FileUp size={14} className="text-indigo-500" />
+                      <span className="text-xs font-bold text-indigo-600">{report.evidence_files.length} evidence file(s)</span>
+                      {report.evidence_files.map((f, fi) => (
+                        <span key={fi} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                          {f.split('/').pop()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   
                   <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -446,13 +470,27 @@ export default function GrievancePortal() {
                       <Shield size={10} /> ZERO-KNOWLEDGE ACTIVE
                     </span>
                   </label>
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition">
+                  <label className="flex flex-col items-center justify-center w-full min-h-[8rem] border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition p-4">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       <FileUp className="w-8 h-8 mb-3 text-slate-400" />
                       <p className="mb-1 text-sm font-bold text-slate-600">Click to upload evidence</p>
                       <p className="text-xs text-slate-400 font-medium">Metadata (location, EXIF) will be automatically stripped.</p>
+                      {evidenceFiles.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                          {evidenceFiles.map((file, i) => (
+                            <span key={i} className="text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-1 rounded">
+                              {file.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <input type="file" className="hidden" multiple />
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      multiple 
+                      onChange={(e) => setEvidenceFiles(Array.from(e.target.files))}
+                    />
                   </label>
                 </div>
               </div>
@@ -521,6 +559,33 @@ export default function GrievancePortal() {
                     <div className="bg-slate-50 p-4 rounded-xl text-sm text-slate-700 font-medium mb-4">
                       {report.description}
                     </div>
+
+                    {report.evidence_files && report.evidence_files.length > 0 && (
+                      <div className="mb-4 flex items-center gap-2 flex-wrap">
+                        <FileUp size={14} className="text-indigo-500" />
+                        <span className="text-xs font-bold text-indigo-600">{report.evidence_files.length} file(s) attached</span>
+                        {report.evidence_files.map((f, fi) => (
+                          <span key={fi} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                            {f.split('/').pop()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {(report.deadline || report.sentiment) && (
+                      <div className="flex items-center gap-3 mb-4">
+                        {report.deadline && (
+                          <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded flex items-center gap-1">
+                            <Activity size={12} /> SLA: {report.deadline}
+                          </span>
+                        )}
+                        {report.sentiment && (
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
+                            AI: {report.sentiment}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-end">
                       <button onClick={() => handleRaiseFollowUp(report)} className="bg-slate-100 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-slate-200 transition">
