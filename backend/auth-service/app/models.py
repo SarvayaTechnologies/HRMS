@@ -329,3 +329,26 @@ class PreQualifiedPool(Base):
     status = Column(String, default="available")        # available, hired, expired
     added_at = Column(DateTime, default=datetime.utcnow)
     notified_for_job_id = Column(Integer, nullable=True)  # If matched to a new role
+
+class Course(Base):
+    __tablename__ = "courses"
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), index=True)
+    title = Column(String)
+    category = Column(String)
+    description = Column(String, nullable=True)
+    duration = Column(String, nullable=True)  # e.g., "4h 30m"
+    rating = Column(Float, default=0.0)
+    level = Column(String, nullable=True)     # Beginner, Intermediate, Advanced
+    video_url = Column(String, nullable=True) # YouTube, Coursera, or custom upload URL
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CourseEnrollment(Base):
+    __tablename__ = "course_enrollments"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), index=True)
+    status = Column(String, default="enrolled") # enrolled, completed
+    enrolled_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)

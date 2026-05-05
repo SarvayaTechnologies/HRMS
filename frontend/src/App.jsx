@@ -40,6 +40,7 @@ const WellnessNavigator = lazy(() => import('./pages/WellnessNavigator'));
 const PersonalSecurityLog = lazy(() => import('./pages/PersonalSecurityLog'));
 const EmployeeSettings = lazy(() => import('./pages/EmployeeSettings'));
 const OrgSettings = lazy(() => import('./pages/OrgSettings'));
+const OrgCourseManagement = lazy(() => import('./pages/OrgCourseManagement'));
 
 function OrgDashboardLayout({ children }) {
   return (
@@ -92,6 +93,7 @@ function App() {
                   <Route path="succession" element={<Succession />} />
                   <Route path="learning" element={<SkillGap />} />
                   <Route path="learning/path" element={<LearningPath />} />
+                  <Route path="course-management" element={<OrgCourseManagement />} />
                   <Route path="mobility" element={<InternalMobility />} />
                   <Route path="mobility/results/:jobId" element={<InterviewResults />} />
                   <Route path="culture" element={<CultureIntelligence />} />

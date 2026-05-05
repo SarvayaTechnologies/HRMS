@@ -6,6 +6,7 @@ export default function Performance() {
   const [sentimentTrend, setSentimentTrend] = useState(null);
   const [promotions, setPromotions] = useState(null);
   const [risks, setRisks] = useState(null);
+  const [learningAnalytics, setLearningAnalytics] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,17 +19,19 @@ export default function Performance() {
     const headers = { "Authorization": `Bearer ${token}` };
 
     try {
-      const [nbRes, stRes, prRes, rRes] = await Promise.all([
+      const [nbRes, stRes, prRes, rRes, laRes] = await Promise.all([
         fetch("http://localhost:8001/performance/nine-box", { headers }),
         fetch("http://localhost:8001/performance/sentiment-trend", { headers }),
         fetch("http://localhost:8001/performance/promotion-readiness", { headers }),
-        fetch("http://localhost:8001/performance/disengagement-risk", { headers })
+        fetch("http://localhost:8001/performance/disengagement-risk", { headers }),
+        fetch("http://localhost:8001/org/courses/analytics", { headers })
       ]);
 
       setNineBox(await nbRes.json());
       setSentimentTrend(await stRes.json());
       setPromotions(await prRes.json());
       setRisks(await rRes.json());
+      if (laRes.ok) setLearningAnalytics(await laRes.json());
     } catch (e) {
       console.error(e);
     }
@@ -103,13 +106,13 @@ export default function Performance() {
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
           <div className="flex justify-between items-start mb-4">
-            <div className="bg-blue-100 text-blue-600 p-3 rounded-xl"><Users size={24} /></div>
-            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">HIGH POTENTIAL</span>
+            <div className="bg-amber-100 text-amber-600 p-3 rounded-xl"><BookOpen size={24} /></div>
+            <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md">UPSKILLING</span>
           </div>
           <p className="text-3xl font-black text-slate-800">
-            {nineBox?.placements?.filter(p => p.potential_band === "High").length || 0}
+            {learningAnalytics.filter(a => a.status === 'completed').length}
           </p>
-          <p className="text-sm text-slate-500 font-medium">In top 33% potential</p>
+          <p className="text-sm text-slate-500 font-medium">Courses completed</p>
         </div>
       </div>
 
@@ -153,6 +156,33 @@ export default function Performance() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
+            <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <TrendingUp className="text-indigo-500" /> Recent Upskilling Progress
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {learningAnalytics.slice(0, 4).map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className={`p-2 rounded-xl ${entry.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                    <Award size={20} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-slate-800">{entry.employee_name}</p>
+                    <p className="text-xs text-slate-500 line-clamp-1">{entry.course_title}</p>
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase border ${
+                    entry.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                  }`}>
+                    {entry.status}
+                  </span>
+                </div>
+              ))}
+              {learningAnalytics.length === 0 && (
+                <p className="col-span-2 text-center text-slate-400 py-4 italic">No learning data available.</p>
+              )}
             </div>
           </div>
         </div>

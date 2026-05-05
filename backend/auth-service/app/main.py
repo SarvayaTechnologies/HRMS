@@ -3128,3 +3128,121 @@ async def check_audit_integrity(db: Session = Depends(database.get_db), current_
     # The AI engine acts as the independent "Integrity Verifier"
     result = await verify_audit_integrity(hash_chain)
     return result
+
+# --- LEARNING & DEVELOPMENT ---
+
+class CourseCreate(BaseModel):
+    title: str
+    category: str
+    description: Optional[str] = None
+    duration: Optional[str] = None
+    level: str = "Beginner"
+    video_url: Optional[str] = None
+
+@app.post("/org/courses")
+async def create_course(course: CourseCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "organization", "manager"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    new_course = models.Course(
+        org_id=current_user.organization_id,
+        title=course.title,
+        category=course.category,
+        description=course.description,
+        duration=course.duration,
+        level=course.level,
+        video_url=course.video_url,
+        rating=5.0
+    )
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+    return new_course
+
+@app.get("/courses")
+async def get_courses(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    courses = db.query(models.Course).filter(models.Course.org_id == current_user.organization_id).order_by(models.Course.id.desc()).all()
+    
+    # Enrich with enrollment status
+    enrollments = db.query(models.CourseEnrollment).filter(models.CourseEnrollment.user_id == current_user.id).all()
+    enrolled_map = {e.course_id: e.status for e in enrollments}
+    
+    result = []
+    for c in courses:
+        course_dict = {
+            "id": c.id,
+            "title": c.title,
+            "category": c.category,
+            "description": c.description,
+            "duration": c.duration,
+            "level": c.level,
+            "video_url": c.video_url,
+            "rating": c.rating,
+            "enrollment_status": enrolled_map.get(c.id, None)
+        }
+        result.append(course_dict)
+    return result
+
+@app.post("/courses/{course_id}/enroll")
+async def enroll_course(course_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    existing = db.query(models.CourseEnrollment).filter(
+        models.CourseEnrollment.user_id == current_user.id,
+        models.CourseEnrollment.course_id == course_id
+    ).first()
+    if existing:
+        return existing
+    
+    enrollment = models.CourseEnrollment(
+        user_id=current_user.id,
+        course_id=course_id,
+        org_id=current_user.organization_id,
+        status="enrolled"
+    )
+    db.add(enrollment)
+    db.commit()
+    return enrollment
+
+@app.post("/courses/{course_id}/complete")
+async def complete_course(course_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    enrollment = db.query(models.CourseEnrollment).filter(
+        models.CourseEnrollment.user_id == current_user.id,
+        models.CourseEnrollment.course_id == course_id
+    ).first()
+    
+    if not enrollment:
+        enrollment = models.CourseEnrollment(
+            user_id=current_user.id,
+            course_id=course_id,
+            org_id=current_user.organization_id,
+            status="completed",
+            completed_at=datetime.utcnow()
+        )
+        db.add(enrollment)
+    else:
+        enrollment.status = "completed"
+        enrollment.completed_at = datetime.utcnow()
+    
+    db.commit()
+    return enrollment
+
+@app.get("/org/courses/analytics")
+async def get_org_course_analytics(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.role not in ["org", "admin", "organization", "manager"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    enrollments = db.query(
+        models.CourseEnrollment, 
+        models.User.full_name, 
+        models.Course.title
+    ).join(models.User, models.CourseEnrollment.user_id == models.User.id)\
+     .join(models.Course, models.CourseEnrollment.course_id == models.Course.id)\
+     .filter(models.CourseEnrollment.org_id == current_user.organization_id).all()
+     
+    return [{
+        "id": e[0].id,
+        "employee_name": e[1],
+        "course_title": e[2],
+        "status": e[0].status,
+        "enrolled_at": e[0].enrolled_at,
+        "completed_at": e[0].completed_at
+    } for e in enrollments]

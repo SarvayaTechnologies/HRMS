@@ -28,6 +28,7 @@ export default function Sidebar() {
         { name: 'Performance Intelligence', icon: <MoveUpRight size={20}/>, path: '/dashboard/performance', roles: ['manager', 'admin'] },
         { name: 'Succession Planning', icon: <Award size={20}/>, path: '/dashboard/succession', roles: ['admin'] },
         { name: 'Internal Careers', icon: <Briefcase size={20}/>, path: '/dashboard/mobility', roles: ['employee', 'manager', 'admin'] },
+        { name: 'Course Management', icon: <BookOpen size={20}/>, path: '/dashboard/course-management', roles: ['org', 'admin', 'manager'] },
       ]
     },
     {

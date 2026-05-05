@@ -1,15 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Search, PlayCircle, Clock, Star, TrendingUp } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function CourseCatalog() {
-  const [courses] = useState([
-    { id: 1, title: 'Advanced React Patterns', category: 'Frontend', duration: '4h 30m', level: 'Intermediate', rating: 4.8 },
-    { id: 2, title: 'Cloud Infrastructure for Developers', category: 'DevOps', duration: '6h 15m', level: 'Advanced', rating: 4.9 },
-    { id: 3, title: 'Data Structures & Algorithms in Python', category: 'Backend', duration: '8h 0m', level: 'Intermediate', rating: 4.7 },
-    { id: 4, title: 'Leadership Communication Masterclass', category: 'Soft Skills', duration: '2h 45m', level: 'Beginner', rating: 4.9 },
-    { id: 5, title: 'AI Engineering and MLOps', category: 'Data Science', duration: '12h 20m', level: 'Advanced', rating: 5.0 },
-    { id: 6, title: 'UI/UX Principles for Engineers', category: 'Design', duration: '3h 10m', level: 'Beginner', rating: 4.6 }
-  ]);
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { token } = useAuth();
+
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  const fetchCourses = async () => {
+    try {
+      const res = await fetch('http://localhost:8001/courses', {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCourses(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEnroll = async (courseId, videoUrl) => {
+    try {
+      await fetch(`http://localhost:8001/courses/${courseId}/enroll`, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      fetchCourses();
+      if (videoUrl) window.open(videoUrl, '_blank');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleComplete = async (e, courseId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      await fetch(`http://localhost:8001/courses/${courseId}/complete`, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      fetchCourses();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 bg-[#050505] min-h-screen flex items-center justify-center">
+        <div className="text-indigo-400 font-bold">Loading Courses...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 bg-[#050505] min-h-screen">
@@ -34,14 +85,31 @@ export default function CourseCatalog() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {courses.map(course => (
-            <div key={course.id} className="bg-[#111827] border border-slate-800 rounded-3xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group relative overflow-hidden">
+            <div 
+              key={course.id} 
+              onClick={() => handleEnroll(course.id, course.video_url)}
+              className="bg-[#111827] border border-slate-800 rounded-3xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group relative overflow-hidden"
+            >
               <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
                 <PlayCircle size={100} />
               </div>
               <div className="relative z-10">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold mb-4">
-                  <TrendingUp size={12} /> {course.category}
+                <div className="flex justify-between items-start mb-4">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">
+                    <TrendingUp size={12} /> {course.category}
+                  </div>
+                  {course.enrollment_status === 'completed' && (
+                    <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-md border border-emerald-500/20">
+                      COMPLETED
+                    </span>
+                  )}
+                  {course.enrollment_status === 'enrolled' && (
+                    <span className="bg-indigo-500/20 text-indigo-400 text-[10px] font-bold px-2 py-0.5 rounded-md border border-indigo-500/20">
+                      IN PROGRESS
+                    </span>
+                  )}
                 </div>
+                
                 <h3 className="text-xl font-bold text-white mb-2 group-hover:text-indigo-400 transition-colors line-clamp-2">
                   {course.title}
                 </h3>
@@ -65,9 +133,19 @@ export default function CourseCatalog() {
                   }`}>
                     {course.level}
                   </span>
-                  <button className="text-indigo-400 text-sm font-bold flex items-center gap-1 group-hover:gap-2 transition-all">
-                    Enroll <PlayCircle size={16} />
-                  </button>
+                  
+                  {course.enrollment_status === 'enrolled' ? (
+                    <button 
+                      onClick={(e) => handleComplete(e, course.id)}
+                      className="bg-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20"
+                    >
+                      Mark Complete
+                    </button>
+                  ) : (
+                    <div className="text-indigo-400 text-sm font-bold flex items-center gap-1 group-hover:gap-2 transition-all">
+                      {course.enrollment_status === 'completed' ? 'Re-watch' : 'Enroll Now'} <PlayCircle size={16} />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
