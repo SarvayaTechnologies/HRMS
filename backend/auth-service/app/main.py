@@ -1470,6 +1470,7 @@ async def finish_internal_interview(job_id: int, request: Request, db: Session =
             evaluation = await evaluate_interview_performance(job.title, job.description, answers)
             app_record.interview_evaluation = json.dumps(evaluation)
             app_record.interview_result = evaluation.get("recommendation", "Pending Review")
+            app_record.match_score = evaluation.get("score", 0)
             db.commit()
             
             # Run advanced AI analysis pipeline
@@ -2044,13 +2045,19 @@ async def get_interview_results(job_id: int, db: Session = Depends(database.get_
         
         results.append({
             "id": a.id,
+            "application_id": a.id,
             "employee_id": a.employee_id,
             "employee_name": emp.full_name if emp else "Unknown",
             "employee_email": emp.email if emp else "N/A",
             "status": a.status,
             "match_score": a.match_score,
             "interview_result": a.interview_result,
-            "evaluation": evaluation,
+            "interview_evaluation": evaluation,
+            "competency_scores": a.competency_scores,
+            "sentiment_analysis": a.sentiment_analysis,
+            "soft_skill_feedback": a.soft_skill_feedback,
+            "highlights_reel": a.interview_highlights,
+            "is_prequalified": a.is_prequalified,
             "applied_at": a.applied_at.isoformat() if a.applied_at else None
         })
     return results

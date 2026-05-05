@@ -58,7 +58,7 @@ function EmployeeDashboardLayout({ children }) {
   return (
     <div className="flex h-screen bg-[#050505] overflow-hidden">
       <EmployeeSidebar />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
         <Suspense fallback={<div className="p-10 text-slate-400 font-medium italic">Loading...</div>}>
           {children}
         </Suspense>

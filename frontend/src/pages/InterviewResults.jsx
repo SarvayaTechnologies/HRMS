@@ -53,27 +53,27 @@ export default function InterviewResults() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#050505] flex flex-col md:flex-row text-slate-200">
       {/* Sidebar: Candidate List */}
-      <div className="w-full md:w-80 bg-white border-r border-slate-200 h-screen flex flex-col shadow-sm z-10">
-        <div className="p-6 border-b border-slate-100 bg-slate-50">
+      <div className="w-full md:w-80 bg-[#0a0a0a] border-r border-slate-800 h-screen flex flex-col shadow-2xl z-10 custom-scrollbar">
+        <div className="p-6 border-b border-slate-800 bg-[#0f0f0f]">
           <button 
             onClick={() => navigate('/dashboard/mobility')}
-            className="text-slate-500 hover:text-indigo-600 flex items-center gap-2 text-sm font-bold mb-4 transition-colors"
+            className="text-slate-500 hover:text-cyan-400 flex items-center gap-2 text-sm font-bold mb-4 transition-colors"
           >
             <ArrowLeft size={16} /> Back to Mobility
           </button>
-          <h2 className="text-xl font-black text-slate-900">AI Candidates</h2>
+          <h2 className="text-xl font-black text-white">AI Candidates</h2>
           <p className="text-sm text-slate-500 font-medium">{results.length} Interviews Analyzed</p>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {results.length === 0 ? (
-            <div className="text-center p-8 text-slate-400 font-medium">No completed interviews yet.</div>
+            <div className="text-center p-8 text-slate-600 font-medium">No completed interviews yet.</div>
           ) : (
             results.map((cand, idx) => {
               const evalData = parseJsonFallback(cand.interview_evaluation, {});
-              const score = evalData.score || 0;
+              const score = evalData.score || evalData.overall_score || 0;
               const isSelected = selectedCandidate?.application_id === cand.application_id;
               
               return (
@@ -82,27 +82,27 @@ export default function InterviewResults() {
                   onClick={() => setSelectedCandidate(cand)}
                   className={`p-4 rounded-2xl cursor-pointer transition-all border ${
                     isSelected 
-                      ? 'bg-indigo-600 border-indigo-700 shadow-md text-white' 
-                      : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50 text-slate-800'
+                      ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.3)] text-white' 
+                      : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900 text-slate-300'
                   }`}
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20' : 'bg-slate-800 text-cyan-400'}`}>
                       <User size={20} />
                     </div>
                     <div>
-                      <h4 className="font-bold text-sm">{cand.employee_name}</h4>
-                      <p className={`text-xs ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>Applied: {cand.applied_at ? cand.applied_at.split('T')[0] : 'N/A'}</p>
+                      <h4 className="font-bold text-sm truncate w-32">{cand.employee_name}</h4>
+                      <p className={`text-[10px] uppercase tracking-tighter ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>Applied: {cand.applied_at ? cand.applied_at.split('T')[0] : 'N/A'}</p>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center mt-3 pt-3 border-t border-current border-opacity-10">
-                    <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md ${
+                  <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
                       isSelected ? 'bg-white/10' : 
-                      cand.interview_result === 'Recommended' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                      cand.interview_result === 'Recommended' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'
                     }`}>
                       {cand.interview_result || "Pending"}
                     </span>
-                    <span className="text-lg font-black">{score}/100</span>
+                    <span className="text-lg font-black">{score}%</span>
                   </div>
                 </div>
               );

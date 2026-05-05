@@ -99,6 +99,33 @@ function EmployeeMobility() {
     }
   };
 
+  const handleManualApply = async () => {
+    if (!uploadFile) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+
+      const res = await fetch(`http://localhost:8001/employee/jobs/${selectedJob.id}/apply`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAppStatus({
+          applied: true,
+          status: data.status || "Application Received",
+          match_score: data.score || 75
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleAIResumeGenerate = async () => {
     setUploading(true);
     try {
@@ -143,7 +170,7 @@ function EmployeeMobility() {
   };
 
   return (
-    <div className="p-8 bg-[#030712] min-h-screen text-slate-200">
+    <div className="p-8 bg-[#050505] text-slate-200">
       <div className="max-w-6xl mx-auto space-y-8">
         
         {/* Header Section */}
@@ -370,7 +397,7 @@ function EmployeeMobility() {
 
         {/* Application Modal */}
         {selectedJob && (
-          <div className="fixed inset-0 z-50 bg-[#030712]/90 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="fixed inset-0 z-50 bg-[#050505]/95 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
             <div className="bg-[#111827] border border-slate-700 rounded-[2rem] w-full max-w-2xl p-10 relative shadow-[0_0_50px_rgba(0,0,0,0.5)] my-8 animate-in zoom-in-95 duration-300">
               <button 
                 onClick={() => setSelectedJob(null)}
@@ -463,10 +490,11 @@ function EmployeeMobility() {
                   </div>
 
                   <button 
+                    onClick={handleManualApply}
                     disabled={uploading || !uploadFile}
-                    className="w-full bg-slate-800 text-white font-bold py-4 rounded-xl hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-colors border border-slate-700"
+                    className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-colors border border-indigo-500 shadow-lg shadow-indigo-500/20"
                   >
-                    Submit Traditional Resume
+                    {uploading ? <Loader2 className="animate-spin" size={20} /> : <><FileText size={18} /> Submit Traditional Resume</>}
                   </button>
                 </div>
               )}

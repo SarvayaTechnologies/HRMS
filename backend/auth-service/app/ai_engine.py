@@ -253,9 +253,9 @@ async def evaluate_interview_performance(job_title, job_desc, qa_pairs):
     {qa_text}
     
     Evaluate the candidate and return a VALID JSON object with:
-    1. "overall_score": a number from 0 to 100
+    1. "score": a number from 0 to 100
     2. "recommendation": either "Recommended" or "Not Recommended"
-    3. "summary": a 3-4 sentence overall assessment
+    3. "feedback": a 3-4 sentence overall assessment (also provide this as "summary")
     4. "strengths": a list of 3 key strengths demonstrated
     5. "weaknesses": a list of 2-3 areas for improvement
     6. "question_scores": a list of objects, one per question, each with "question_number" (int), "score" (0-10), and "feedback" (1 sentence)
@@ -274,7 +274,7 @@ async def evaluate_interview_performance(job_title, job_desc, qa_pairs):
     except Exception as e:
         print(f"[ai_engine] evaluate_interview_performance failed: {e}")
         return {
-            "overall_score": 0,
+            "score": 0,
             "recommendation": "Not Recommended",
             "summary": "AI evaluation was unable to complete due to a system error. Please review manually.",
             "strengths": [],
@@ -450,7 +450,9 @@ async def analyze_soft_skills(qa_pairs: list):
         "score": 72,
         "feedback": "How well-structured were the answers (STAR method, etc.)"
       }},
-      "overall_impression": "2-3 sentence summary of the candidate's soft skill profile"
+      "overall_impression": "2-3 sentence summary",
+      "strengths": ["Strength 1", "Strength 2"],
+      "areas_for_improvement": ["Area 1", "Area 2"]
     }}
     """
     try:
@@ -485,19 +487,17 @@ async def generate_competency_spider(job_title, job_desc, qa_pairs):
     Interview Transcript:
     {qa_text}
     
-    Score each competency from 0-100 and provide a brief justification.
+    Score each competency from 0-100.
     Return ONLY a valid JSON object:
     {{
-      "competencies": [
-        {{"name": "Problem Solving", "score": 85, "justification": "..."}},
-        {{"name": "Communication", "score": 78, "justification": "..."}},
-        {{"name": "Technical Depth", "score": 90, "justification": "..."}},
-        {{"name": "Leadership Potential", "score": 65, "justification": "..."}},
-        {{"name": "Cultural Fit", "score": 80, "justification": "..."}},
-        {{"name": "Adaptability", "score": 72, "justification": "..."}},
-        {{"name": "Domain Expertise", "score": 88, "justification": "..."}}
-      ],
-      "overall_band": "A|B|C|D",
+      "Problem Solving": 85,
+      "Communication": 78,
+      "Technical Depth": 90,
+      "Leadership Potential": 65,
+      "Cultural Fit": 80,
+      "Adaptability": 72,
+      "Domain Expertise": 88,
+      "overall_band": "A",
       "hire_confidence": 82
     }}
     """
@@ -512,15 +512,13 @@ async def generate_competency_spider(job_title, job_desc, qa_pairs):
     except Exception as e:
         print(f"[ai_engine] generate_competency_spider failed: {e}")
         return {
-            "competencies": [
-                {"name": "Problem Solving", "score": 0, "justification": "Unavailable"},
-                {"name": "Communication", "score": 0, "justification": "Unavailable"},
-                {"name": "Technical Depth", "score": 0, "justification": "Unavailable"},
-                {"name": "Leadership Potential", "score": 0, "justification": "Unavailable"},
-                {"name": "Cultural Fit", "score": 0, "justification": "Unavailable"},
-                {"name": "Adaptability", "score": 0, "justification": "Unavailable"},
-                {"name": "Domain Expertise", "score": 0, "justification": "Unavailable"}
-            ],
+            "Problem Solving": 0,
+            "Communication": 0,
+            "Technical Depth": 0,
+            "Leadership Potential": 0,
+            "Cultural Fit": 0,
+            "Adaptability": 0,
+            "Domain Expertise": 0,
             "overall_band": "N/A",
             "hire_confidence": 0
         }
