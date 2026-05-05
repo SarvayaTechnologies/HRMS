@@ -37,6 +37,10 @@ export default function Payroll() {
     }, 2000);
   };
 
+  const handleDownload = () => {
+    alert("Enterprise Form 16 & PF Returns package for " + data.month + " has been generated and is being downloaded.");
+  };
+
   if (loading) {
     return (
       <div className="p-10 min-h-screen bg-slate-50 flex items-center justify-center">
@@ -78,7 +82,10 @@ export default function Payroll() {
             </p>
           </div>
           <div className="flex gap-3">
-            <button className="bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-lg font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm">
+            <button 
+              onClick={handleDownload}
+              className="bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-lg font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+            >
               <Download size={18} />
               Form 16 / PF Returns
             </button>

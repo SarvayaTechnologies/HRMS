@@ -147,7 +147,11 @@ function EmployeeLeave() {
                   onChange={(e) => setFormData({...formData, start_date: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-4 pl-12 rounded-xl outline-none focus:border-indigo-500 transition-colors" 
                 />
-                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" size={20} />
+                <Calendar 
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 cursor-pointer" 
+                  size={20} 
+                  onClick={() => document.getElementById('start_date_input').showPicker()}
+                />
               </div>
             </div>
             <div className="relative group">
@@ -161,7 +165,11 @@ function EmployeeLeave() {
                   onChange={(e) => setFormData({...formData, end_date: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-4 pl-12 rounded-xl outline-none focus:border-indigo-500 transition-colors" 
                 />
-                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" size={20} />
+                <Calendar 
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 cursor-pointer" 
+                  size={20} 
+                  onClick={() => document.getElementById('end_date_input').showPicker()}
+                />
               </div>
             </div>
           </div>
@@ -191,7 +199,7 @@ function EmployeeLeave() {
               >
                 <option value="">Select Colleague for Handover</option>
                 {employees.map(e => (
-                  <option key={e.id} value={e.user_id}>{e.full_name} ({e.department})</option>
+                  <option key={e.id} value={e.id}>{e.full_name} ({e.department})</option>
                 ))}
               </select>
             </div>

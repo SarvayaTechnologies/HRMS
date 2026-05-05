@@ -321,6 +321,12 @@ async def apply_leave(data: dict, db: Session = Depends(database.get_db), curren
     
     impact_analysis = await ai_engine.analyze_leave_impact(data, team_context)
 
+    pop_id = data.get('point_of_person_id')
+    try:
+        pop_id = int(pop_id) if pop_id else None
+    except ValueError:
+        pop_id = None
+
     new_leave = models.LeaveRequest(
         employee_id=employee.id,
         leave_type=data['leave_type'],
@@ -329,7 +335,7 @@ async def apply_leave(data: dict, db: Session = Depends(database.get_db), curren
         reason=data['reason'],
         status="pending",
         handover_link=data.get('handover_link'),
-        point_of_person_id=data.get('point_of_person_id'),
+        point_of_person_id=pop_id,
         wellness_check_requested=data.get('wellness_check_requested', False),
         ai_impact_score=impact_analysis.get('ai_impact_score'),
         ai_milestone_conflict=impact_analysis.get('ai_milestone_conflict'),

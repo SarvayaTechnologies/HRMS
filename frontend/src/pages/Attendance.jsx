@@ -233,11 +233,11 @@ function EmployeeAttendance() {
 
         <button
           onClick={handlePunch}
-          disabled={loading || status === "Checked Out" || status === "Checked In"}
+          disabled={loading || status === "Checked Out"}
           className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:bg-slate-400 disabled:cursor-not-allowed"
         >
           {loading ? <Loader2 className="animate-spin" size={20} /> : <MapPin size={20} />}
-          {loading ? "Recording..." : status === "Checked In" ? "Punch Out" : "Punch In Now"}
+          {loading ? "Recording..." : (status === "Checked In" || status === "Checked In (Offline)") ? "Punch Out" : "Punch In Now"}
         </button>
         <p className="mt-4 text-xs text-slate-400 italic text-center">* Geolocation and Device Identity verified at punch.</p>
       </div>
