@@ -138,12 +138,12 @@ export default function EmployeePerformance() {
           {/* Gamified Milestones */}
           <div className="bg-[#111] p-8 rounded-3xl border border-white/5">
             <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-              <Award className="text-yellow-500" size={20} /> Milestone Achievements
+              <Award className="text-accent" size={20} /> Milestone Achievements
             </h3>
             <div className="flex flex-wrap gap-3">
               {growth?.milestone_badges?.length > 0 ? (
                 growth.milestone_badges.map((badge, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-4 py-2 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(234,179,8,0.1)]">
+                  <div key={idx} className="flex items-center gap-2 bg-accent/10 border border-accent/20 text-accent px-4 py-2 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(5,150,105,0.1)]">
                     <Zap size={16} /> {badge}
                   </div>
                 ))

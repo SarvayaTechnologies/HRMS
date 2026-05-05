@@ -54,14 +54,14 @@ export default function ExecutiveDashboard() {
                     <div className="p-3 bg-slate-50 rounded-2xl">{s.icon}</div>
                   </div>
                   <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{s.label}</p>
-                  <p className="text-3xl font-black text-slate-900">{s.value}</p>
+                  <p className="text-3xl font-black text-sidebar">{s.value}</p>
                   <p className="text-slate-400 text-xs mt-1">{s.sub}</p>
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl">
+              <div className="lg:col-span-2 bg-sidebar rounded-[2.5rem] p-10 text-white shadow-2xl">
                 <h3 className="text-xl font-bold mb-2">Organization Overview</h3>
                 <p className="text-slate-400 text-sm mb-6">Live data from your workforce</p>
 
@@ -75,18 +75,18 @@ export default function ExecutiveDashboard() {
                   <div className="grid grid-cols-2 gap-6">
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                       <p className="text-slate-500 text-xs font-bold uppercase mb-2">Active</p>
-                      <p className="text-4xl font-black text-emerald-400">{stats.active}</p>
+                      <p className="text-4xl font-black text-accent">{stats.active}</p>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                       <p className="text-slate-500 text-xs font-bold uppercase mb-2">Pending</p>
-                      <p className="text-4xl font-black text-amber-400">{stats.pending}</p>
+                      <p className="text-4xl font-black text-amber-500">{stats.pending}</p>
                     </div>
                   </div>
                 )}
               </div>
 
               <div className="space-y-6">
-                <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-xl">
+                <div className="bg-primary p-8 rounded-[2.5rem] text-white shadow-xl">
                   <Zap className="mb-4 text-amber-300" fill="currentColor" />
                   <h4 className="font-bold text-lg mb-2">Getting Started</h4>
                   <p className="text-indigo-100 text-sm leading-relaxed">

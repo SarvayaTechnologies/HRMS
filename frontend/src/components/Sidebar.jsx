@@ -3,13 +3,15 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, UserCheck, Mic, Wallet, Settings, 
   Menu, X, Clock, Leaf, Award, MoveUpRight, BookOpen, 
-  BookCheck, Briefcase, Activity, ShieldAlert, Flame, ShieldCheck
+  BookCheck, Briefcase, Activity, ShieldAlert, Flame, ShieldCheck, LogOut
 } from 'lucide-react';
 import RoleGate from './RoleGate'; // Import the guard we created
+import { useAuth } from '../context/AuthContext';
 
 export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(true);
   const location = useLocation();
+  const { logout } = useAuth();
 
   const menuGroups = [
     {
@@ -49,12 +51,12 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className={`relative flex flex-col h-screen bg-white border-r border-slate-200 transition-all duration-300 z-50 ${isOpen ? 'w-64' : 'w-20'}`}>
+    <div className={`relative flex flex-col h-screen bg-sidebar border-r border-white/5 transition-all duration-300 z-50 ${isOpen ? 'w-64' : 'w-20'}`}>
       
       {/* Toggle Button Moved Outside */}
       <button 
         onClick={() => setIsOpen(!isOpen)} 
-        className="absolute -right-4 top-8 bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 p-1.5 rounded-full shadow-md transition-colors z-50 flex items-center justify-center"
+        className="absolute -right-4 top-8 bg-slate-900 border border-white/10 text-slate-400 hover:text-primary p-1.5 rounded-full shadow-md transition-colors z-50 flex items-center justify-center"
       >
         {isOpen ? <X size={14}/> : <Menu size={14}/>}
       </button>
@@ -78,11 +80,11 @@ export default function Sidebar() {
                     to={item.path}
                     className={`flex items-center ${isOpen ? 'justify-start gap-3 px-3' : 'justify-center'} py-2.5 rounded-xl transition-all group ${
                       location.pathname === item.path 
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200/50' 
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'
+                      ? 'bg-primary text-white shadow-md shadow-primary/20' 
+                      : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                   >
-                    <div className={location.pathname === item.path ? 'text-white' : 'text-slate-400 group-hover:text-indigo-600'}>
+                    <div className={location.pathname === item.path ? 'text-white' : 'text-slate-500 group-hover:text-primary'}>
                       {React.cloneElement(item.icon, { size: 18 })}
                     </div>
                     {isOpen && <span className="text-[13px] font-medium">{item.name}</span>}
@@ -93,6 +95,17 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Logout */}
+      <div className="p-3 border-t border-white/5">
+        <button 
+          onClick={logout}
+          className={`flex items-center ${isOpen ? 'justify-start gap-3 px-3' : 'justify-center'} py-2.5 rounded-lg text-red-400/80 hover:bg-red-500/10 hover:text-red-400 transition-all w-full group`}
+        >
+          <LogOut size={18} className="group-hover:scale-110 transition-transform"/>
+          {isOpen && <span className="text-[13px] font-medium">Logout</span>}
+        </button>
+      </div>
     </div>
   );
 }

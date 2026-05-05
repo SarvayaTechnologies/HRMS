@@ -66,12 +66,12 @@ export default function EmployeeSidebar() {
   ];
 
   return (
-    <div className={`relative flex flex-col h-screen bg-[#050505] border-r border-white/5 transition-all duration-300 z-50 ${isOpen ? 'w-64' : 'w-20'}`}>
+    <div className={`relative flex flex-col h-screen bg-sidebar border-r border-white/5 transition-all duration-300 z-50 ${isOpen ? 'w-64' : 'w-20'}`}>
       
       {/* Toggle Button Moved Outside */}
       <button 
         onClick={() => setIsOpen(!isOpen)} 
-        className="absolute -right-4 top-8 bg-[#111] border border-white/10 text-slate-400 hover:text-emerald-400 p-1.5 rounded-full shadow-md transition-colors z-50 flex items-center justify-center"
+        className="absolute -right-4 top-8 bg-slate-900 border border-white/10 text-slate-400 hover:text-accent p-1.5 rounded-full shadow-md transition-colors z-50 flex items-center justify-center"
       >
         {isOpen ? <X size={14}/> : <Menu size={14}/>}
       </button>
@@ -85,7 +85,7 @@ export default function EmployeeSidebar() {
           </button>
 
           {showDropdown && (
-            <div className={`absolute top-16 ${isOpen ? 'right-6 left-auto' : 'left-16'} bg-[#111] border border-white/10 shadow-xl rounded-xl w-64 max-h-80 overflow-y-auto z-50 p-2`}>
+            <div className={`absolute top-16 ${isOpen ? 'right-6 left-auto' : 'left-16'} bg-slate-900 border border-white/10 shadow-xl rounded-xl w-64 max-h-80 overflow-y-auto z-50 p-2`}>
                <div className="flex justify-between items-center p-2 border-b border-white/10 mb-2">
                  <h4 className="text-xs font-bold uppercase text-slate-400">Notifications</h4>
                  <button onClick={() => setShowDropdown(false)} className="text-slate-500 hover:text-slate-300"><X size={14}/></button>
@@ -131,11 +131,11 @@ export default function EmployeeSidebar() {
                   to={item.path}
                   className={`flex items-center ${isOpen ? 'justify-start gap-3 px-3' : 'justify-center'} py-2.5 rounded-lg transition-all group ${
                     location.pathname === item.path 
-                    ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 shadow-md shadow-emerald-500/5' 
-                    : 'text-slate-400 hover:bg-white/5 hover:text-emerald-400'
+                    ? 'bg-accent/10 text-accent border border-accent/20 shadow-md shadow-accent/5' 
+                    : 'text-slate-400 hover:bg-white/5 hover:text-accent'
                   }`}
                 >
-                  <div className={location.pathname === item.path ? 'text-emerald-400' : 'text-slate-500 group-hover:text-emerald-400'}>
+                  <div className={location.pathname === item.path ? 'text-accent' : 'text-slate-500 group-hover:text-accent'}>
                     {React.cloneElement(item.icon, { size: 18 })}
                   </div>
                   {isOpen && <span className="text-[13px] font-medium">{item.name}</span>}
